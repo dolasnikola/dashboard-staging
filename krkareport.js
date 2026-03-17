@@ -18,7 +18,7 @@ const CREATIVES_CONFIG = {
     },
     meta: {
       images: ['creatives/krka/meta_preview.png'],
-      w: 180, h: 48
+      w: 180, h: 55
     },
     dv360: {
       images: ['creatives/krka/dv360_1.jpg'],
