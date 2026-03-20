@@ -489,6 +489,19 @@ async function dbSetClientAccess(userId, clientId, grant) {
   return true;
 }
 
+// ============== SYNC LOG ==============
+
+async function dbGetLastSync() {
+  const { data, error } = await sb
+    .from('sync_log')
+    .select('*')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .single();
+  if (error) { console.log('[dbGetLastSync] No sync log yet:', error.message); return null; }
+  return data;
+}
+
 // ============== DIAGNOSTICS ==============
 async function runDiagnostics() {
   const results = {};

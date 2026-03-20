@@ -72,6 +72,29 @@ function renderHomepage() {
     `;
     grid.appendChild(card);
   });
+
+  // Show last sync status
+  updateLastSyncStatus();
+}
+
+async function updateLastSyncStatus() {
+  const el = document.getElementById('lastSyncStatus');
+  if (!el) return;
+  try {
+    const sync = await dbGetLastSync();
+    if (!sync) { el.textContent = ''; return; }
+    const finished = sync.finished_at ? new Date(sync.finished_at) : null;
+    if (!finished) { el.textContent = 'Sync u toku...'; return; }
+    const mins = Math.round((Date.now() - finished.getTime()) / 60000);
+    let timeAgo;
+    if (mins < 1) timeAgo = 'upravo';
+    else if (mins < 60) timeAgo = `pre ${mins} min`;
+    else if (mins < 1440) timeAgo = `pre ${Math.round(mins / 60)}h`;
+    else timeAgo = `pre ${Math.round(mins / 1440)} dana`;
+    const statusIcon = sync.status === 'completed' ? '●' : '●';
+    const statusColor = sync.status === 'completed' ? 'var(--green)' : 'var(--orange)';
+    el.innerHTML = `<span style="color:${statusColor}">${statusIcon}</span> Poslednji sync: ${timeAgo}`;
+  } catch { el.textContent = ''; }
 }
 
 // ============== CLIENT DETAIL ==============
