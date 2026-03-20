@@ -4,7 +4,7 @@
 Multi-tenant performance marketing dashboard for a digital agency (dolasads.com).
 Serves multiple clients (NLB Komercijalna banka, Urban Garden, Krka Terme). Serbian language UI.
 Data stored in Supabase (PostgreSQL) with role-based access control.
-Currently in FAZA 1 of a 4-phase scaling plan (approved March 2026).
+FAZA 1 and FAZA 2 complete. 4-phase scaling plan (approved March 2026).
 
 ## Architecture
 - `index.html` — HTML markup. Links to external CSS/JS files.
@@ -15,12 +15,11 @@ Currently in FAZA 1 of a 4-phase scaling plan (approved March 2026).
 - `views.js` — All rendering: homepage cards, client detail, platform tabs, Chart.js charts, sparklines, MoM comparison, GA4 KPI view, NLB product breakdown, admin panel.
 - `app.js` — Hash routing (`#/clientId`, `#/admin`), date range filtering, data aggregation, modals (import/budget/sheets), Google Sheets sync (`syncOneSheet`, `syncAllSheets`, `syncGA4Sheet`), admin CRUD actions.
 - `auth.js` — Supabase Auth (email/password login, session management, role-based UI gating, logout). Uses `sb.auth` methods. `applyRolePermissions()` controls button visibility per role.
-- `migrate.js` — One-time localStorage → Supabase migration script. Run `migrateToSupabase()` in browser console.
 - `reports/krka.js` — Krka monthly PDF report generator. Fetches CSV data, generates multi-page PDF with AI narratives via Cloudflare Worker.
-- `supabase-migration.sql` — Complete database schema (8 tables), RLS policies, helper functions, triggers, seed data for 3 clients + sheet links.
 - `creatives/<client>/` — Ad creative images organized by client and platform.
-- `worker/` — Cloudflare Worker for AI report narratives (calls Claude API).
-- `AppsScripts/` — Google Ads Script for automated data export to Google Sheets.
+- `supabase/` — Supabase CLI project (Edge Functions + migrations)
+  - `supabase/functions/sync-sheets/` — FAZA 2 Edge Function for automated data sync
+  - `supabase/migrations/` — SQL migrations for sync_log table, RPC functions, pg_cron setup
 
 ## Script Loading Order
 Scripts must load in this exact order (each depends on the previous):
@@ -100,11 +99,58 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 5. Place creative images in `creatives/<client>/`
 6. Assign users access via `user_client_access` table
 
-## Migration from localStorage
-Run `migrateToSupabase()` in browser console (must be logged in as admin).
-Reads pmDashboard, ga4_kpi_data, and pmSheetLinks from localStorage and writes to Supabase.
+## Hosting & Deployment
+- **Frontend:** Vercel — https://dashboard-seven-sigma-90.vercel.app/
+- **GitHub repo:** github.com/dolasnikola/dashboard-staging (private)
+- **Supabase:** vorffefuboftlcwteucu.supabase.co
+- **Cloudflare Worker:** Deployed separately for AI report narratives
+- **Auto-deploy:** Push to `main` branch → Vercel auto-deploys
+- Files removed from repo (deployed elsewhere): `AppsScripts/`, `worker/`, `migrate.js`, `supabase-migration.sql`, `dashboard_scaling_plan.pdf`, `app_structure.svg`
+
+## FAZA 2: Automated Data Sync (IN PROGRESS)
+Edge Function `sync-sheets` replaces manual Google Sheets sync.
+
+**Architecture:**
+```
+pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
+  → checks Belgrade timezone (runs only at 8:00 or 9:00 local time)
+  → reads sheet_links from DB → fetches CSV from Google Sheets
+  → parseCSV → detectPlatform → mapRow → deduplicate
+  → atomic upsert via RPC (DELETE+INSERT in one transaction)
+  → logs result to sync_log table
+```
+
+**Schedule:** 2x daily at 8:00 and 9:00 Belgrade time (auto-adjusts for CET/CEST).
+- Google Ads script runs ~4:00, Meta/DV360 ~6:00-7:00
+- Edge Function auto-detects Belgrade timezone via `Europe/Belgrade` — no manual DST changes needed
+
+**New database objects (migration already applied):**
+- `sync_log` table — tracks sync runs (status, rows_synced, errors)
+- `upsert_campaign_data()` RPC — atomic DELETE+INSERT for campaign_data
+- `upsert_ga4_data()` RPC — atomic DELETE+INSERT for ga4_kpi_data
+- `pg_cron` + `pg_net` extensions enabled
+
+**Edge Function files:** `supabase/functions/sync-sheets/`
+- `index.ts` — entry point, timezone check, orchestration
+- `csv.ts` — parseCSV, parseCSVLine (port from data.js)
+- `platform.ts` — detectPlatform, mapRow, parseNum (port from data.js)
+- `sync-campaigns.ts` — campaign data sync + deduplication
+- `sync-ga4.ts` — GA4 KPI sync (Serbian/English column names)
+- `types.ts` — TypeScript interfaces
+
+**Frontend changes:**
+- `db.js` — added `dbGetLastSync()` reads from sync_log
+- `views.js` — added `updateLastSyncStatus()` shows "Poslednji sync: pre X min" on homepage
+- `index.html` — added `#lastSyncStatus` element
+
+**Status: DONE (deployed 2026-03-21)**
+- Edge Function deployed and tested: 9/9 sheets synced, 760 rows
+- pg_cron jobs active (3 UTC slots: 5:00, 6:00, 7:00)
+- Manual sync still works as fallback via "Sheets Sync" button in dashboard
+- To redeploy after changes: `cd dashboard-staging && supabase functions deploy sync-sheets --no-verify-jwt`
 
 ## Known Issues / In Progress
+- **Supabase CLI on Windows:** `npx supabase` conflicts with `supabase.js` in project root (Windows Script Host). Use `supabase` directly (installed via scoop/winget) from the project folder.
 - GA4 KPI sync: Sheet headers are in Serbian (`Mesec`, `Proizvod`) — `syncGA4Sheet()` handles both Serbian and English column names
 - `syncAllSheets()` excludes `_ga4` keys (GA4 has separate sync via `syncGA4Sheet()`)
 - Debug logging active in `db.js` (`[prefetchHomepage]`, `[dbSave]`) — remove after stabilization
@@ -134,7 +180,7 @@ Reads pmDashboard, ga4_kpi_data, and pmSheetLinks from localStorage and writes t
 - **User role defaults to `viewer`** — new users created via Supabase Auth trigger get `viewer` role. Must manually set to `admin` via SQL for full access
 
 ## Scaling Roadmap (Approved March 2026)
-- **FAZA 1 (current):** Supabase (PostgreSQL + Auth + RLS) replaces localStorage
-- **FAZA 2:** Data pipeline — Edge Function cron syncs Sheets → Supabase every 30 min
+- **FAZA 1 (DONE):** Supabase (PostgreSQL + Auth + RLS) replaces localStorage. Deployed on Vercel.
+- **FAZA 2 (DONE):** Data pipeline — Edge Function syncs Sheets → Supabase at 8:00 + 9:00 daily. Deployed 2026-03-21.
 - **FAZA 3:** React + Vite + Tailwind frontend on Vercel
 - **FAZA 4:** Direct API integrations, automated reporting, white-label, AI insights
