@@ -1,0 +1,396 @@
+import { sb } from './supabase'
+import { _cache, dbGetCampaignData } from './cache'
+
+// ============== CLIENTS ==============
+
+export async function fetchClients() {
+  const { data, error } = await sb.from('clients').select('*')
+
+  if (error) {
+    console.error('[fetchClients] error:', error.message)
+    return {}
+  }
+
+  const clientMap = {}
+  data.forEach(row => {
+    clientMap[row.id] = {
+      name: row.name,
+      currency: row.currency,
+      status: row.status,
+      statusLabel: row.status_label,
+      defaultPlatform: row.default_platform,
+      platforms: row.platforms,
+      tiktok: row.tiktok,
+      setup: row.setup,
+      budgetNote: row.budget_note
+    }
+  })
+
+  const preferredOrder = ['nlb', 'urban', 'krka']
+  const clients = {}
+  preferredOrder.forEach(id => { if (clientMap[id]) clients[id] = clientMap[id] })
+  Object.keys(clientMap).forEach(id => { if (!clients[id]) clients[id] = clientMap[id] })
+
+  _cache.clients = clients
+  return clients
+}
+
+// ============== PREFETCH ==============
+
+const _prefetchInProgress = {}
+
+export async function prefetchClientData(clientId) {
+  if (_prefetchInProgress[clientId]) {
+    console.log(`[prefetchClientData] Already in progress for ${clientId}, skipping`)
+    return
+  }
+  _prefetchInProgress[clientId] = true
+
+  try {
+    const allCampaignRows = []
+    let from = 0
+    const pageSize = 1000
+    while (true) {
+      const { data, error } = await sb.from('campaign_data')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('date', { ascending: true })
+        .range(from, from + pageSize - 1)
+      if (error || !data || data.length === 0) break
+      allCampaignRows.push(...data)
+      if (data.length < pageSize) break
+      from += pageSize
+    }
+
+    const [budgetRes, flightRes, ga4Res] = await Promise.all([
+      sb.from('budgets').select('*').eq('client_id', clientId),
+      sb.from('flight_days').select('*').eq('client_id', clientId),
+      sb.from('ga4_kpi_data').select('*').eq('client_id', clientId)
+    ])
+
+    // Clear cache AFTER all fetches complete
+    const campaignPrefix = `${clientId}_`
+    Object.keys(_cache.campaignData).forEach(k => {
+      if (k.startsWith(campaignPrefix)) delete _cache.campaignData[k]
+    })
+    Object.keys(_cache.budgets).forEach(k => {
+      if (k.includes(`_${clientId}_`)) delete _cache.budgets[k]
+    })
+    Object.keys(_cache.flightDays).forEach(k => {
+      if (k.includes(`_${clientId}_`)) delete _cache.flightDays[k]
+    })
+    Object.keys(_cache.ga4Data).forEach(k => {
+      if (k.startsWith(`ga4_${clientId}_`)) delete _cache.ga4Data[k]
+    })
+
+    // Populate cache
+    allCampaignRows.forEach(row => {
+      const key = `${clientId}_${row.platform}_${row.month}`
+      if (!_cache.campaignData[key]) _cache.campaignData[key] = []
+      _cache.campaignData[key].push({
+        campaign: row.campaign,
+        insertion_order: row.insertion_order || '',
+        date: row.date,
+        impressions: Number(row.impressions) || 0,
+        clicks: Number(row.clicks) || 0,
+        spend: Number(row.spend) || 0,
+        reach: Number(row.reach) || 0,
+        conversions: Number(row.conversions) || 0,
+        conv_value: Number(row.conv_value) || 0,
+        ctr: Number(row.ctr) || 0,
+        cpm: Number(row.cpm) || 0,
+        cpc: Number(row.cpc) || 0,
+        cpa: Number(row.cpa) || 0
+      })
+    })
+
+    if (budgetRes.data) {
+      budgetRes.data.forEach(row => {
+        _cache.budgets[`budget_${clientId}_${row.platform}_${row.month}`] = Number(row.amount) || 0
+      })
+    }
+
+    if (flightRes.data) {
+      flightRes.data.forEach(row => {
+        _cache.flightDays[`flight_${clientId}_${row.month}`] = row.days || []
+      })
+    }
+
+    if (ga4Res.data) {
+      ga4Res.data.forEach(row => {
+        const key = `ga4_${clientId}_${row.month}`
+        if (!_cache.ga4Data[key]) _cache.ga4Data[key] = []
+        _cache.ga4Data[key].push({
+          product: row.product,
+          leads: Number(row.leads) || 0,
+          sessions: Number(row.sessions) || 0,
+          users: Number(row.users) || 0
+        })
+      })
+    }
+
+    _cache._prefetched[clientId] = true
+  } finally {
+    delete _prefetchInProgress[clientId]
+  }
+}
+
+export async function prefetchHomepageData() {
+  const allCampaignData = []
+  let from = 0
+  const pageSize = 1000
+  while (true) {
+    const { data, error } = await sb.from('campaign_data')
+      .select('*')
+      .order('date', { ascending: true })
+      .range(from, from + pageSize - 1)
+    if (error) {
+      console.error('[prefetchHomepage] campaign_data error:', error.message)
+      break
+    }
+    if (!data || data.length === 0) break
+    allCampaignData.push(...data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+
+  const { data: budgetData, error: budgetError } = await sb.from('budgets').select('*')
+  if (budgetError) console.error('[prefetchHomepage] budgets error:', budgetError.message)
+
+  console.log(`[prefetchHomepage] Loaded ${allCampaignData.length} campaign rows, ${budgetData?.length || 0} budgets from Supabase`)
+
+  _cache.campaignData = {}
+  allCampaignData.forEach(row => {
+    const key = `${row.client_id}_${row.platform}_${row.month}`
+    if (!_cache.campaignData[key]) _cache.campaignData[key] = []
+    _cache.campaignData[key].push({
+      campaign: row.campaign,
+      insertion_order: row.insertion_order || '',
+      date: row.date,
+      impressions: Number(row.impressions) || 0,
+      clicks: Number(row.clicks) || 0,
+      spend: Number(row.spend) || 0,
+      reach: Number(row.reach) || 0,
+      conversions: Number(row.conversions) || 0,
+      conv_value: Number(row.conv_value) || 0,
+      ctr: Number(row.ctr) || 0,
+      cpm: Number(row.cpm) || 0,
+      cpc: Number(row.cpc) || 0,
+      cpa: Number(row.cpa) || 0
+    })
+  })
+
+  if (budgetData) {
+    budgetData.forEach(row => {
+      _cache.budgets[`budget_${row.client_id}_${row.platform}_${row.month}`] = Number(row.amount) || 0
+    })
+  }
+}
+
+// ============== CAMPAIGN DATA (write) ==============
+
+export async function dbSaveCampaignData(clientId, platform, month, rows) {
+  const key = `${clientId}_${platform}_${month}`
+
+  const deduped = {}
+  rows.forEach(r => {
+    const date = r.date || ''
+    const campaign = r.campaign || 'Unknown'
+    const io = r.insertion_order || ''
+    const dedupKey = `${date}|${campaign}|${io}`
+    if (!deduped[dedupKey]) {
+      deduped[dedupKey] = {
+        date: date || null, campaign, insertion_order: io,
+        impressions: 0, clicks: 0, spend: 0, reach: 0,
+        conversions: 0, conv_value: 0, ctr: 0, cpm: 0, cpc: 0, cpa: 0
+      }
+    }
+    const d = deduped[dedupKey]
+    d.impressions += r.impressions || 0
+    d.clicks += r.clicks || 0
+    d.spend += r.spend || 0
+    d.reach += r.reach || 0
+    d.conversions += r.conversions || 0
+    d.conv_value += r.conv_value || 0
+  })
+  Object.values(deduped).forEach(d => {
+    d.ctr = d.impressions > 0 ? d.clicks / d.impressions * 100 : 0
+    d.cpm = d.impressions > 0 ? d.spend / d.impressions * 1000 : 0
+    d.cpc = d.clicks > 0 ? d.spend / d.clicks : 0
+    d.cpa = d.conversions > 0 ? d.spend / d.conversions : 0
+  })
+  const cleanRows = Object.values(deduped)
+
+  _cache.campaignData[key] = cleanRows
+  console.log(`[dbSave] ${key}: ${rows.length} raw → ${cleanRows.length} deduped`)
+
+  const records = cleanRows.map(r => ({ client_id: clientId, platform, month, ...r }))
+
+  const { error: delError } = await sb.from('campaign_data')
+    .delete().eq('client_id', clientId).eq('platform', platform).eq('month', month)
+  if (delError) {
+    console.error('[dbSave] DELETE error:', delError.message)
+    return
+  }
+
+  if (records.length > 0) {
+    for (let i = 0; i < records.length; i += 500) {
+      const batch = records.slice(i, i + 500)
+      const { error } = await sb.from('campaign_data').insert(batch)
+      if (error) {
+        console.error('[dbSave] INSERT error for', key, ':', error.message)
+        break
+      }
+    }
+  }
+}
+
+// ============== BUDGETS (write) ==============
+
+export async function dbSetBudget(clientId, platform, month, amount) {
+  _cache.budgets[`budget_${clientId}_${platform}_${month}`] = amount
+  const { error } = await sb.from('budgets').upsert({
+    client_id: clientId, platform, month, amount,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'client_id,platform,month' })
+  if (error) console.error('Upsert budget error:', error)
+}
+
+// ============== FLIGHT DAYS (write) ==============
+
+export async function dbSetFlightDays(clientId, month, days) {
+  _cache.flightDays[`flight_${clientId}_${month}`] = days
+  const { error } = await sb.from('flight_days').upsert({
+    client_id: clientId, month, days
+  }, { onConflict: 'client_id,month' })
+  if (error) console.error('Upsert flight_days error:', error)
+}
+
+// ============== GA4 KPI DATA (write) ==============
+
+export async function dbSaveGA4Data(clientId, month, rows) {
+  const key = `ga4_${clientId}_${month}`
+  _cache.ga4Data[key] = rows
+
+  await sb.from('ga4_kpi_data').delete().eq('client_id', clientId).eq('month', month)
+  if (rows.length > 0) {
+    const records = rows.map(r => ({
+      client_id: clientId, month,
+      product: r.product, leads: r.leads || 0, sessions: r.sessions || 0, users: r.users || 0
+    }))
+    const { error } = await sb.from('ga4_kpi_data').upsert(records, { onConflict: 'client_id,month,product' })
+    if (error) console.error('[dbSave] GA4 upsert error:', error.message)
+  }
+}
+
+// ============== SHEET LINKS ==============
+
+export async function dbGetSheetLinks() {
+  if (_cache.sheetLinks) return _cache.sheetLinks
+  const { data, error } = await sb.from('sheet_links').select('*')
+  if (error) { console.error('fetchSheetLinks error:', error); return {} }
+  const links = {};
+  (data || []).forEach(row => {
+    links[`${row.client_id}_${row.platform}`] = row.sheet_url
+  })
+  _cache.sheetLinks = links
+  return links
+}
+
+export async function dbSaveSheetLinks(links) {
+  _cache.sheetLinks = links
+  const records = Object.entries(links).map(([key, url]) => {
+    const firstUnderscore = key.indexOf('_')
+    return {
+      client_id: key.substring(0, firstUnderscore),
+      platform: key.substring(firstUnderscore + 1),
+      sheet_url: url, is_default: false
+    }
+  })
+  for (const rec of records) {
+    const { error } = await sb.from('sheet_links').upsert(rec, { onConflict: 'client_id,platform' })
+    if (error) console.error('Upsert sheet_link error:', error)
+  }
+}
+
+// ============== SYNC LOG ==============
+
+export async function dbGetLastSync() {
+  const { data, error } = await sb.from('sync_log')
+    .select('*').order('started_at', { ascending: false }).limit(1).single()
+  if (error) { console.log('[dbGetLastSync] No sync log yet:', error.message); return null }
+  return data
+}
+
+// ============== ADMIN ==============
+
+export async function dbGetAllUsers() {
+  const { data, error } = await sb.from('user_profiles').select('*').order('created_at', { ascending: true })
+  if (error) { console.error('[dbGetAllUsers]', error.message); return [] }
+  return data || []
+}
+
+export async function dbGetAllClientAccess() {
+  const { data, error } = await sb.from('user_client_access').select('*')
+  if (error) { console.error('[dbGetAllClientAccess]', error.message); return [] }
+  return data || []
+}
+
+export async function dbUpdateUserRole(userId, newRole) {
+  const { error } = await sb.from('user_profiles').update({ role: newRole }).eq('id', userId)
+  if (error) { console.error('[dbUpdateUserRole]', error.message); return false }
+  return true
+}
+
+export async function dbSetClientAccess(userId, clientId, grant) {
+  if (grant) {
+    const { error } = await sb.from('user_client_access').upsert({ user_id: userId, client_id: clientId })
+    if (error) { console.error('[dbSetClientAccess] grant error:', error.message); return false }
+  } else {
+    const { error } = await sb.from('user_client_access').delete().eq('user_id', userId).eq('client_id', clientId)
+    if (error) { console.error('[dbSetClientAccess] revoke error:', error.message); return false }
+  }
+  return true
+}
+
+// ============== DIAGNOSTICS ==============
+
+export async function runDiagnostics() {
+  const results = {}
+  console.log('%c[Diagnostics] Pokrećem dijagnostiku...', 'color:#4a6cf7;font-weight:bold;')
+
+  results.protocol = location.protocol
+  results.httpsOk = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+
+  try {
+    const { data: { session }, error } = await sb.auth.getSession()
+    results.session = session ? { userId: session.user.id, email: session.user.email } : null
+    results.sessionError = error?.message || null
+  } catch (e) { results.session = null; results.sessionError = e.message }
+
+  const tables = ['clients', 'campaign_data', 'budgets', 'sheet_links', 'ga4_kpi_data']
+  results.tables = {}
+  for (const table of tables) {
+    try {
+      const { error, count } = await sb.from(table).select('*', { count: 'exact', head: true })
+      results.tables[table] = { count, error: error?.message || null }
+    } catch (e) { results.tables[table] = { count: 0, error: e.message } }
+  }
+
+  results.cache = {
+    clients: _cache.clients ? Object.keys(_cache.clients).length + ' klijenata' : 'prazan',
+    campaignData: Object.keys(_cache.campaignData).length + ' ključeva',
+    budgets: Object.keys(_cache.budgets).length + ' zapisa',
+    sheetLinks: _cache.sheetLinks ? Object.keys(_cache.sheetLinks).length + ' linkova' : 'prazan'
+  }
+
+  console.log('%c[Diagnostics] Rezultati:', 'color:#4a6cf7;font-weight:bold;')
+  console.table(results.tables)
+  console.log('Cache:', results.cache)
+  return results
+}
+
+// Expose to window for console debugging
+if (typeof window !== 'undefined') {
+  window.runDiagnostics = runDiagnostics
+}

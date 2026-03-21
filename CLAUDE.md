@@ -1,73 +1,100 @@
 # Performance Marketing Dashboard
 
 ## Overview
-Multi-tenant performance marketing dashboard for a digital agency (dolasads.com).
+Multi-tenant performance marketing dashboard for a digital agency (Media House).
 Serves multiple clients (NLB Komercijalna banka, Urban Garden, Krka Terme). Serbian language UI.
 Data stored in Supabase (PostgreSQL) with role-based access control.
-FAZA 1 and FAZA 2 complete. 4-phase scaling plan (approved March 2026).
+FAZA 1, FAZA 2, and FAZA 3 complete. 4-phase scaling plan (approved March 2026).
 
-## Architecture
-- `index.html` — HTML markup. Links to external CSS/JS files.
-- `style.css` — All styles. Uses CSS custom properties for theming. DM Sans + DM Serif Display fonts.
-- `supabase.js` — Supabase client init. Uses `sb` as the global client variable (not `supabase`, which conflicts with the CDN library name on `window.supabase`).
-- `db.js` — Data access layer. Wraps Supabase queries with an in-memory pre-fetch cache. Reads are synchronous (from cache), writes are async (to Supabase). Handles pagination for >1000 rows. Deduplicates CSV rows before cache/DB write. Includes `runDiagnostics()` for troubleshooting.
-- `data.js` — Constants (PLATFORM_NAMES, METRIC_LABELS, NLB_PRODUCTS), formatting (`fmt`, `fmtMetric`), CSV parsing (`parseCSV`, `detectPlatform`, `mapRow`), notifications. `CLIENTS` is `let` — loaded dynamically from Supabase via `initDashboard()`.
-- `views.js` — All rendering: homepage cards, client detail, platform tabs, Chart.js charts, sparklines, MoM comparison, GA4 KPI view, NLB product breakdown, admin panel.
-- `app.js` — Hash routing (`#/clientId`, `#/admin`), date range filtering, data aggregation, modals (import/budget/sheets), Google Sheets sync (`syncOneSheet`, `syncAllSheets`, `syncGA4Sheet`), admin CRUD actions.
-- `auth.js` — Supabase Auth (email/password login, session management, role-based UI gating, logout). Uses `sb.auth` methods. `applyRolePermissions()` controls button visibility per role.
-- `reports/krka.js` — Krka monthly PDF report generator. Fetches CSV data, generates multi-page PDF with AI narratives via Cloudflare Worker.
-- `creatives/<client>/` — Ad creative images organized by client and platform.
-- `supabase/` — Supabase CLI project (Edge Functions + migrations)
-  - `supabase/functions/sync-sheets/` — FAZA 2 Edge Function for automated data sync
-  - `supabase/migrations/` — SQL migrations for sync_log table, RPC functions, pg_cron setup
+## Architecture (FAZA 3: React + Vite + Tailwind)
+Built with React 19, Vite 8, Tailwind CSS v4, Zustand for state management, react-chartjs-2 for charts.
 
-## Script Loading Order
-Scripts must load in this exact order (each depends on the previous):
-1. Chart.js 4.4.1 (CDN, in `<head>`)
-2. `@supabase/supabase-js` v2 (CDN, in `<head>`)
-3. `supabase.js` — creates `sb` client instance
-4. `db.js` — data access layer + cache (uses `sb`)
-5. `data.js` — depends on db.js functions; provides formatting, CSV parsing
-6. `views.js` — depends on data.js globals; references app.js functions (called later, not at parse time)
-7. `app.js` — depends on data.js + views.js globals; sets up modals, drop zone, routing
-8. `auth.js` — depends on sb + data.js + views.js; runs session check at end (auto-login)
-9. `migrate.js` — depends on sb + db.js functions
-10. jsPDF + jsPDF-AutoTable (CDN)
-11. `reports/krka.js` — depends on data.js + views.js + jsPDF
+### Entry Points
+- `index.html` — Vite entry point with `<div id="root">` and Google Fonts
+- `src/main.jsx` — React entry, registers Chart.js components, renders `<App />` in `<BrowserRouter>`
+- `src/App.jsx` — Auth gate, React Router routes, modal state, notification
+
+### Routing (React Router v6)
+- `/` → `HomePage` (client cards grid)
+- `/:clientId` → `ClientDetail` (platform tabs, metrics, charts)
+- `/admin` → `AdminPanel` (user management)
+- Auth gate: unauthenticated → `<LoginGate />`
+
+### Data Layer (`src/lib/`)
+- `supabase.js` — Supabase client init, exports `sb`
+- `cache.js` — In-memory `_cache` object + synchronous read functions (dbGetCampaignData, dbGetBudget, dbGetFlightDays, dbGetGA4Data, dbGetAllCampaignDataForPlatform, getSheetLinks, clearCache)
+- `db.js` — Async Supabase queries: fetchClients (with preferredOrder), prefetchClientData (per-client guard), prefetchHomepageData (pagination), dbSaveCampaignData (deduplication), admin functions, dbGetLastSync, runDiagnostics (exposed to window)
+- `data.js` — Constants (PLATFORM_NAMES, PLATFORM_BADGE, METRIC_LABELS, NLB_PRODUCTS), formatting (fmt, fmtMetric), CSV parsing (parseCSV, detectPlatform, mapRow)
+- `utils.js` — Date range helpers (getDateRangeBounds, getMonthsInRange), filtering (getFilteredData), aggregation (aggregateByCampaign, groupByProduct), MoM comparison (getMoMChange returns object, not HTML), getDailyTotals
+- `sync.js` — Google Sheets sync (syncOneSheet, syncAllSheets with _syncInProgress guard, syncGA4Sheet), uses callbacks for status updates
+
+### State Management (`src/stores/`)
+- `authStore.js` — Zustand: currentUser, currentUserRole, isAuthenticated, isLoading + login(), logout(), checkSession(), setupAuthListener()
+- `appStore.js` — Zustand: clients, activeDateRange, customDateFrom/To, notification + initDashboard(), setDateRange(), notify(), refreshClients()
+
+**Key design decision:** Campaign data cache (`_cache`) lives outside Zustand/React state. Thousands of rows in React state = re-render hell. Components read cache via `src/lib/cache.js` functions. Zustand holds only metadata and UI state.
+
+### Components (`src/components/`)
+```
+auth/LoginGate.jsx          — Email/password login form
+layout/Header.jsx           — Sticky header, role-based button visibility
+home/HomePage.jsx           — Client cards grid with loading state
+home/ClientCard.jsx         — Card with metrics, budget bar, staggered animation
+home/LastSyncStatus.jsx     — Async last sync time from sync_log
+client/ClientDetail.jsx     — Route container, prefetchClientData on mount
+client/DateRangeBar.jsx     — Preset buttons + custom date inputs
+client/BudgetOverview.jsx   — Per-platform budget cards with spend bars
+client/PlatformTabs.jsx     — Overview + platform tab bar
+client/OverviewTab.jsx      — Aggregate metrics + Doughnut + Bar charts
+client/PlatformView.jsx     — Metrics cards, sparklines, MoM, campaign table
+client/MetricCard.jsx       — Formatted value + MoM change + sparkline
+client/CampaignTable.jsx    — Sortable data table
+client/GA4View.jsx          — Month selector + KPI table
+client/ProductsSection.jsx  — NLB product breakdown cards + line chart
+admin/AdminPanel.jsx        — User table, role dropdown, client access
+modals/ImportModal.jsx      — CSV drag-and-drop import
+modals/BudgetModal.jsx      — Monthly budget inputs per client/platform
+modals/SheetsModal.jsx      — Sheet URLs + sync buttons
+ui/Notification.jsx         — Toast notification from appStore
+```
+
+### Reports (`src/reports/`)
+- `krka.js` — Krka monthly PDF report generator (ES module). Uses jsPDF + jspdf-autotable (npm). Fetches CSV data from dedicated report sheets, generates multi-page PDF with AI narratives via Cloudflare Worker. Called from ClientDetail via `generateMonthlyReport(clientId)`.
+
+### Static Assets
+- `public/creatives/<client>/` — Ad creative images organized by client and platform
+
+### Supabase (`supabase/`)
+- `supabase/functions/sync-sheets/` — FAZA 2 Edge Function for automated data sync
+- `supabase/migrations/` — SQL migrations for sync_log table, RPC functions, pg_cron setup
 
 ## Data Flow
 ```
 Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatform() → mapRow()
   → dbSaveCampaignData() → [deduplicate → cache update + Supabase DELETE/INSERT]
-  → renderHomepage() / renderPlatformView()
+  → React components re-read from cache
 ```
-- On login: `checkSession()` → `unlockDashboard()` → `initDashboard()`:
-  - `fetchClients()` from Supabase → populate `CLIENTS`
-  - `prefetchHomepageData()` loads all campaign_data + budgets into cache (with pagination)
+- On login: `checkSession()` → `authStore.loadProfile()` → `appStore.initDashboard()`:
+  - `fetchClients()` from Supabase → populate `clients` in store
+  - `prefetchHomepageData()` loads all campaign_data + budgets into `_cache` (with pagination)
   - `dbGetSheetLinks()` loads sheet URLs into cache
-  - `renderHomepage()` renders client cards from cache
-  - Auto-sync: `syncAllSheets()` after 1s, `syncGA4Sheet()` after 2s
-  - `_initDone` guard prevents duplicate initialization
-- On client open: `prefetchClientData(id)` → clears + refetches client data from Supabase → render from cache
-- `syncAllSheets()` has `_syncInProgress` guard — renders homepage once after all syncs complete (not per-sheet)
+  - React Router renders `HomePage` with client cards from cache
+- On client open: React Router renders `ClientDetail` → `prefetchClientData(id)` → components read from cache
+- `syncAllSheets()` has `_syncInProgress` guard
 
 ## Auth & Roles
-- **Supabase Auth** with email/password (replaces old SHA-256 hash check)
+- **Supabase Auth** with email/password
 - **Roles:** admin (all access), account_manager (assigned clients), viewer (read-only)
 - **Row-Level Security (RLS)** on all 8 tables
 - User profiles auto-created via `handle_new_user()` database trigger on signup
 - Role stored in `user_profiles.role`, checked via `get_user_role()` SQL function
 - Client access controlled via `user_client_access` table + `has_client_access()` SQL function
-- Viewer role hides Import CSV, Budget, and Sheets Sync buttons
+- Viewer role hides Import CSV, Budget, and Sheets Sync buttons (via `currentUserRole` from authStore)
 
 ## Admin Panel
-- Accessible only to `admin` role via "Admin" button in header (route: `#/admin`)
-- Displays all users from `user_profiles` table in a table
-- **Role management:** dropdown to change user role (viewer / account_manager / admin). Admin's own role is locked.
-- **Client access:** checkbox per client per user. Controls `user_client_access` table. Admins show all checked + disabled (RLS grants full access).
-- Both `account_manager` and `viewer` roles require explicit client access via checkboxes
-- Functions: `dbGetAllUsers()`, `dbGetAllClientAccess()`, `dbUpdateUserRole()`, `dbSetClientAccess()` in db.js
-- UI: `openAdmin()`, `renderAdminPanel()` in views.js; `changeUserRole()`, `toggleClientAccess()` in app.js
+- Route: `/admin`, guarded by `currentUserRole === 'admin'`
+- User table with role dropdown + client access tags
+- Functions: `dbGetAllUsers()`, `dbGetAllClientAccess()`, `dbUpdateUserRole()`, `dbSetClientAccess()` in `src/lib/db.js`
 
 ## Database Tables
 | Table | Purpose |
@@ -83,7 +110,7 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 
 ## Supabase Setup
 - **Project:** Media House (vorffefuboftlcwteucu.supabase.co)
-- **Anon key** in `supabase.js` (public, starts with `sb_publishable_`)
+- **Anon key** in `src/lib/supabase.js` (public, starts with `sb_publishable_`)
 - **Never use service_role key** in frontend code
 - First admin user must be created in Supabase Auth dashboard, then role set via SQL:
   ```sql
@@ -94,20 +121,27 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 ## Adding a New Client
 1. Insert client config into `clients` table in Supabase
 2. Add sheet URLs to `sheet_links` table
-3. Add client ID to `preferredOrder` array in `db.js` `fetchClients()` for display ordering
-4. For PDF reports: add report JS file in `reports/` folder (see `reports/krka.js` as template). Add CSV URLs to `MONTHLY_SHEET_URLS` and creative config to `CREATIVES_CONFIG`
-5. Place creative images in `creatives/<client>/`
+3. Add client ID to `preferredOrder` array in `src/lib/db.js` `fetchClients()` for display ordering
+4. For PDF reports: add report file in `src/reports/` (see `src/reports/krka.js` as template). Add CSV URLs to `MONTHLY_SHEET_URLS` and creative config to `CREATIVES_CONFIG`
+5. Place creative images in `public/creatives/<client>/`
 6. Assign users access via `user_client_access` table
 
-## Hosting & Deployment
+## Build & Deployment
+- **Dev server:** `npm run dev` (Vite, port 5173)
+- **Build:** `npm run build` → outputs to `dist/`
+- **Preview production build:** `npm run preview`
 - **Frontend:** Vercel — https://dashboard-seven-sigma-90.vercel.app/
 - **GitHub repo:** github.com/dolasnikola/dashboard-staging (private)
 - **Supabase:** vorffefuboftlcwteucu.supabase.co
 - **Cloudflare Worker:** Deployed separately for AI report narratives
-- **Auto-deploy:** Push to `main` branch → Vercel auto-deploys
-- Files removed from repo (deployed elsewhere): `AppsScripts/`, `worker/`, `migrate.js`, `supabase-migration.sql`, `dashboard_scaling_plan.pdf`, `app_structure.svg`
+- **Auto-deploy:** Push to `main` branch → Vercel auto-deploys from `dist/`
+- `vercel.json` configured with build command, output directory, and SPA rewrite rule
 
-## FAZA 2: Automated Data Sync (IN PROGRESS)
+## Dependencies (package.json)
+- react, react-dom, react-router-dom, @supabase/supabase-js, chart.js, react-chartjs-2, zustand, jspdf, jspdf-autotable
+- Dev: vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite
+
+## FAZA 2: Automated Data Sync (DONE)
 Edge Function `sync-sheets` replaces manual Google Sheets sync.
 
 **Architecture:**
@@ -121,14 +155,6 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 ```
 
 **Schedule:** 2x daily at 8:00 and 9:00 Belgrade time (auto-adjusts for CET/CEST).
-- Google Ads script runs ~4:00, Meta/DV360 ~6:00-7:00
-- Edge Function auto-detects Belgrade timezone via `Europe/Belgrade` — no manual DST changes needed
-
-**New database objects (migration already applied):**
-- `sync_log` table — tracks sync runs (status, rows_synced, errors)
-- `upsert_campaign_data()` RPC — atomic DELETE+INSERT for campaign_data
-- `upsert_ga4_data()` RPC — atomic DELETE+INSERT for ga4_kpi_data
-- `pg_cron` + `pg_net` extensions enabled
 
 **Edge Function files:** `supabase/functions/sync-sheets/`
 - `index.ts` — entry point, timezone check, orchestration
@@ -138,49 +164,31 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - `sync-ga4.ts` — GA4 KPI sync (Serbian/English column names)
 - `types.ts` — TypeScript interfaces
 
-**Frontend changes:**
-- `db.js` — added `dbGetLastSync()` reads from sync_log
-- `views.js` — added `updateLastSyncStatus()` shows "Poslednji sync: pre X min" on homepage
-- `index.html` — added `#lastSyncStatus` element
-
 **Status: DONE (deployed 2026-03-21)**
-- Edge Function deployed and tested: 9/9 sheets synced, 760 rows
-- pg_cron jobs active (3 UTC slots: 5:00, 6:00, 7:00)
-- Manual sync still works as fallback via "Sheets Sync" button in dashboard
-- To redeploy after changes: `cd dashboard-staging && supabase functions deploy sync-sheets --no-verify-jwt`
+- To redeploy: `cd dashboard-staging && supabase functions deploy sync-sheets --no-verify-jwt`
 
 ## Known Issues / In Progress
 - **Supabase CLI on Windows:** `npx supabase` conflicts with `supabase.js` in project root (Windows Script Host). Use `supabase` directly (installed via scoop/winget) from the project folder.
-- GA4 KPI sync: Sheet headers are in Serbian (`Mesec`, `Proizvod`) — `syncGA4Sheet()` handles both Serbian and English column names
-- `syncAllSheets()` excludes `_ga4` keys (GA4 has separate sync via `syncGA4Sheet()`)
-- Debug logging active in `db.js` (`[prefetchHomepage]`, `[dbSave]`) — remove after stabilization
+- GA4 KPI sync: Sheet headers are in Serbian (`Mesec`, `Proizvod`) — sync handles both Serbian and English column names
+- Debug logging active in `src/lib/db.js` (`[prefetchHomepage]`, `[dbSave]`) — remove after stabilization
 - Client display order maintained via hardcoded `preferredOrder` in `fetchClients()` — will add `sort_order` DB column later
-- Budgets show 0 until set via Budget modal (old localStorage budgets need `migrateToSupabase()` or manual entry)
-
-## Resolved Issues
-- **2x data duplication bug (fixed 2026-03-20):** `openClient()` had a race condition — `_routingInProgress` flag was released before async work finished, so `hashchange` event triggered a parallel `openClient` call. Two `prefetchClientData()` calls ran simultaneously, both pushing the same Supabase data into cache = 2x numbers. Fix: `_routingInProgress` now spans entire async `openClient` (try/finally in views.js), `handleHashChange` no longer manages the flag (app.js), and `prefetchClientData` has a per-client guard + cache clear moved after fetch completes (db.js).
-
-## Diagnostics
-- Run `runDiagnostics()` in browser console (F12) to check: auth session, user role, table access, sheet links, cache state, HTTPS protocol, CDN status
-- CDN fallback detection in `index.html` — shows error page if Chart.js or Supabase fails to load
-- HTTP protocol warning logged to console if not HTTPS (Supabase requires HTTPS on production)
+- Budgets show 0 until set via Budget modal
+- Old vanilla JS files (supabase.js, db.js, data.js, views.js, app.js, auth.js, style.css) still in root — to be removed after FAZA 3 verification
 
 ## Gotchas
-- No modules — all JS files use plain `<script>` tags with global functions
-- Inline onclick handlers in HTML reference global functions — don't rename them
-- Google Sheets must be "Published to the web" as CSV for data fetching to work
-- **Supabase client is `sb`, NOT `supabase`** — `window.supabase` is the CDN library
-- db.js uses pre-fetch cache — data loaded into memory, reads are synchronous
+- **Supabase client is `sb`, NOT `supabase`** — historical naming to avoid CDN conflict
+- `src/lib/cache.js` uses pre-fetch cache — data loaded into memory, reads are synchronous
+- Cache lives outside React/Zustand state — don't put campaign rows in stores
 - Supabase anon key is public by design — RLS policies are the security boundary
-- Supabase default query limit is 1000 rows — db.js uses pagination loops for larger datasets
-- `saveCampaignData()`, `setBudget()`, `setFlightDays()` are async — must be awaited
-- CLIENTS is `let` (not `const`) — loaded dynamically from Supabase on login
-- **CSV deduplication** — Google Ads CSV can have duplicate rows (same date+campaign). `dbSaveCampaignData()` deduplicates by aggregating before writing to cache and Supabase
+- Supabase default query limit is 1000 rows — `src/lib/db.js` uses pagination loops for larger datasets
+- `dbSaveCampaignData()`, `dbSetBudget()`, `dbSetFlightDays()` are async — must be awaited
+- **CSV deduplication** — Google Ads CSV can have duplicate rows. `dbSaveCampaignData()` deduplicates by aggregating before writing
 - **Hosting must be HTTPS** — Supabase API calls fail on HTTP due to mixed-content blocking
-- **User role defaults to `viewer`** — new users created via Supabase Auth trigger get `viewer` role. Must manually set to `admin` via SQL for full access
+- **User role defaults to `viewer`** — new users get `viewer` role via trigger. Must manually set to `admin` via SQL for full access
+- `getMoMChange()` returns `{change, isGood, cls, arrow, label}` object (not HTML string) for React rendering
 
 ## Scaling Roadmap (Approved March 2026)
 - **FAZA 1 (DONE):** Supabase (PostgreSQL + Auth + RLS) replaces localStorage. Deployed on Vercel.
 - **FAZA 2 (DONE):** Data pipeline — Edge Function syncs Sheets → Supabase at 8:00 + 9:00 daily. Deployed 2026-03-21.
-- **FAZA 3:** React + Vite + Tailwind frontend on Vercel
+- **FAZA 3 (DONE):** React + Vite + Tailwind frontend. Build verified 2026-03-21.
 - **FAZA 4:** Direct API integrations, automated reporting, white-label, AI insights
