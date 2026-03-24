@@ -9,7 +9,7 @@ import OverviewTab from './OverviewTab'
 import PlatformView from './PlatformView'
 import GA4View from './GA4View'
 import { PLATFORM_NAMES, PLATFORM_BADGE } from '../../lib/data'
-import { generateMonthlyReport } from '../../reports/krka'
+import { generateReport, fetchReportConfig } from '../../reports/generator'
 
 export default function ClientDetail() {
   const { clientId } = useParams()
@@ -18,6 +18,7 @@ export default function ClientDetail() {
   const client = clients[clientId]
   const [isLoading, setIsLoading] = useState(true)
   const [activePlatform, setActivePlatform] = useState(null)
+  const [hasReportConfig, setHasReportConfig] = useState(false)
 
   useEffect(() => {
     if (!client) return
@@ -26,7 +27,9 @@ export default function ClientDetail() {
       setActivePlatform(client.defaultPlatform || client.platforms[0])
       setIsLoading(false)
     })
-  }, [clientId])
+    // Check if this client has a report config
+    fetchReportConfig(clientId).then(config => setHasReportConfig(!!config))
+  }, [clientId, !!client])
 
   if (!client) {
     return (
@@ -42,9 +45,7 @@ export default function ClientDetail() {
   const allPlatforms = [...client.platforms]
   if (client.tiktok) allPlatforms.push('tiktok')
 
-  // Check for report generator
-  const REPORT_GENERATORS = { krka: 'Krka izvestaj' }
-  const reportLabel = REPORT_GENERATORS[clientId]
+  // Report button (shown for any client with report_configs row)
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '28px 32px' }}>
@@ -63,11 +64,9 @@ export default function ClientDetail() {
               }}>
                 {client.currency}
               </span>
-              {reportLabel && (
-                <button className="btn btn-primary" onClick={() => {
-                  generateMonthlyReport(clientId)
-                }}>
-                  {reportLabel}
+              {hasReportConfig && (
+                <button className="btn btn-primary" onClick={() => generateReport(clientId)}>
+                  Mesecni izvestaj
                 </button>
               )}
             </div>

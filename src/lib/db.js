@@ -327,9 +327,52 @@ export async function dbDeleteClient(clientId) {
   await sb.from('ga4_kpi_data').delete().eq('client_id', clientId)
   await sb.from('campaign_data').delete().eq('client_id', clientId)
   await sb.from('user_client_access').delete().eq('client_id', clientId)
+  await sb.from('report_history').delete().eq('client_id', clientId)
+  await sb.from('report_configs').delete().eq('client_id', clientId)
   const { error } = await sb.from('clients').delete().eq('id', clientId)
   if (error) { console.error('[dbDeleteClient]', error.message); return false }
   return true
+}
+
+// ============== REPORT CONFIG (FAZA 4B) ==============
+
+export async function dbGetReportConfig(clientId) {
+  const { data, error } = await sb.from('report_configs')
+    .select('*').eq('client_id', clientId).eq('is_active', true).limit(1).single()
+  if (error) return null
+  return data
+}
+
+export async function dbGetAllReportConfigs() {
+  const { data, error } = await sb.from('report_configs').select('*').eq('is_active', true)
+  if (error) { console.error('[dbGetAllReportConfigs]', error.message); return [] }
+  return data || []
+}
+
+export async function dbSaveReportConfig(config) {
+  if (config.id) {
+    const { id, ...updates } = config
+    updates.updated_at = new Date().toISOString()
+    const { error } = await sb.from('report_configs').update(updates).eq('id', id)
+    if (error) { console.error('[dbSaveReportConfig]', error.message); return false }
+    return true
+  }
+  const { error } = await sb.from('report_configs').insert(config)
+  if (error) { console.error('[dbSaveReportConfig]', error.message); return false }
+  return true
+}
+
+export async function dbDeleteReportConfig(configId) {
+  const { error } = await sb.from('report_configs').delete().eq('id', configId)
+  if (error) { console.error('[dbDeleteReportConfig]', error.message); return false }
+  return true
+}
+
+export async function dbGetReportHistory(clientId) {
+  const { data, error } = await sb.from('report_history')
+    .select('*').eq('client_id', clientId).order('generated_at', { ascending: false }).limit(20)
+  if (error) { console.error('[dbGetReportHistory]', error.message); return [] }
+  return data || []
 }
 
 // ============== SHEET LINKS ==============

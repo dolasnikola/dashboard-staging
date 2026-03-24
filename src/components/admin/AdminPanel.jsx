@@ -5,10 +5,12 @@ import { useAppStore } from '../../stores/appStore'
 import { dbGetAllUsers, dbGetAllClientAccess, dbUpdateUserRole, dbSetClientAccess, dbCreateClient, dbUpdateClient, dbDeleteClient, dbSaveSheetLinks } from '../../lib/db'
 import { PLATFORM_NAMES } from '../../lib/data'
 import ClientForm from './ClientForm'
+import ReportBuilder from './ReportBuilder'
 
 const TABS = [
   { id: 'users', label: 'Korisnici' },
-  { id: 'clients', label: 'Klijenti' }
+  { id: 'clients', label: 'Klijenti' },
+  { id: 'reports', label: 'Izvestaji' }
 ]
 
 export default function AdminPanel() {
@@ -302,6 +304,10 @@ export default function AdminPanel() {
             </>
           )}
         </>
+      )}
+
+      {activeTab === 'reports' && (
+        <ReportBuilder />
       )}
     </div>
   )

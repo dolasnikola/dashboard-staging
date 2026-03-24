@@ -1,0 +1,6 @@
+name = "report-narratives-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://dashboard-seven-sigma-90.vercel.app"

@@ -51,7 +51,9 @@ client/MetricCard.jsx       — Formatted value + MoM change + sparkline
 client/CampaignTable.jsx    — Sortable data table
 client/GA4View.jsx          — Month selector + KPI table
 client/ProductsSection.jsx  — NLB product breakdown cards + line chart
-admin/AdminPanel.jsx        — User table, role dropdown, client access
+admin/AdminPanel.jsx        — Tabs: Korisnici, Klijenti, Izvestaji
+admin/ClientForm.jsx        — Client create/edit form (FAZA 4A)
+admin/ReportBuilder.jsx     — Report config CRUD per client (FAZA 4B)
 modals/ImportModal.jsx      — CSV drag-and-drop import
 modals/BudgetModal.jsx      — Monthly budget inputs per client/platform
 modals/SheetsModal.jsx      — Sheet URLs + sync buttons
@@ -59,7 +61,9 @@ ui/Notification.jsx         — Toast notification from appStore
 ```
 
 ### Reports (`src/reports/`)
-- `krka.js` — Krka monthly PDF report generator (ES module). Uses jsPDF + jspdf-autotable (npm). Fetches CSV data from dedicated report sheets, generates multi-page PDF with AI narratives via Cloudflare Worker. Called from ClientDetail via `generateMonthlyReport(clientId)`.
+- `generator.js` — Generic report engine (FAZA 4B). Reads config from `report_configs` table, fetches CSV data from configured sheet URLs, generates multi-page PDF with AI narratives via generic Cloudflare Worker. Entry point: `generateReport(clientId)`. Also exports `fetchReportConfig(clientId)`.
+- `pdf-utils.js` — Shared PDF utilities: ASCII transliteration, number/currency formatting, CSV parsing, platform data parsers (Search/Meta/GDN), PDF drawing helpers (background, text, tables), creative image cache. Uses `jspdf-autotable` via `applyPlugin(jsPDF)`.
+- `krka.js` — Thin wrapper for backward compatibility. Calls `generateReport('krka')` from generator.js.
 
 ### Static Assets
 - `public/creatives/<client>/` — Ad creative images organized by client and platform
@@ -107,6 +111,8 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 | `user_profiles` | Extends Supabase Auth with role + full_name |
 | `user_client_access` | Maps users → clients for account_manager/viewer roles |
 | `sheet_links` | Google Sheets CSV URLs per client/platform |
+| `report_configs` | Per-client report configuration (FAZA 4B): platform_labels, metric_cols, sheet_urls, creatives_config, ai_worker_url, ai_prompt_context, gdn_campaign_filter, schedule |
+| `report_history` | Generated report log: client_id, report_month, pdf_url, status |
 
 ## Supabase Setup
 - **Project:** Media House (vorffefuboftlcwteucu.supabase.co)
@@ -118,13 +124,12 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
   SELECT id, email, 'Name', 'admin' FROM auth.users WHERE email = 'your@email.com';
   ```
 
-## Adding a New Client
-1. Insert client config into `clients` table in Supabase
-2. Add sheet URLs to `sheet_links` table
-3. Add client ID to `preferredOrder` array in `src/lib/db.js` `fetchClients()` for display ordering
-4. For PDF reports: add report file in `src/reports/` (see `src/reports/krka.js` as template). Add CSV URLs to `MONTHLY_SHEET_URLS` and creative config to `CREATIVES_CONFIG`
-5. Place creative images in `public/creatives/<client>/`
-6. Assign users access via `user_client_access` table
+## Adding a New Client (FAZA 4A — via Admin UI)
+1. Admin > Klijenti > + Novi klijent — fill form (ID, name, currency, platforms, sheet URLs)
+2. Admin > Korisnici — assign user access
+3. For PDF reports: Admin > Izvestaji > + Novi report config — fill sheet URLs, platform labels, AI worker URL, creative paths
+4. Place creative images in `public/creatives/<client>/`
+5. No code changes or deploys needed — client appears automatically (alphabetical order)
 
 ## Build & Deployment
 - **Dev server:** `npm run dev` (Vite, port 5173)
@@ -133,7 +138,7 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 - **Frontend:** Vercel — https://dashboard-seven-sigma-90.vercel.app/
 - **GitHub repo:** github.com/dolasnikola/dashboard-staging (private)
 - **Supabase:** vorffefuboftlcwteucu.supabase.co
-- **Cloudflare Worker:** Deployed separately for AI report narratives
+- **Cloudflare Worker:** `report-narratives-api` — generic AI narrative generator for all clients. Source in `worker/src/index.js`. Deploy: `cd worker && npx wrangler deploy`
 - **Auto-deploy:** Push to `main` branch → Vercel auto-deploys from `dist/`
 - `vercel.json` configured with build command, output directory, and SPA rewrite rule
 
@@ -173,7 +178,7 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - **Supabase CLI on Windows:** `npx supabase` conflicts with `supabase.js` in project root (Windows Script Host). Use `supabase` directly (installed via scoop/winget) from the project folder.
 - GA4 KPI sync: Sheet headers are in Serbian (`Mesec`, `Proizvod`) — sync handles both Serbian and English column names
 - Debug logging active in `src/lib/db.js` (`[prefetchHomepage]`, `[dbSave]`) — remove after stabilization
-- Client display order maintained via hardcoded `preferredOrder` in `fetchClients()` — will add `sort_order` DB column later
+- Client display order is alphabetical (ORDER BY name). `sort_order` column exists but not yet used in UI.
 - Budgets show 0 until set via Budget modal
 - `sync_log` table has RLS — anon key returns empty array. Frontend reads via authenticated user session. Direct DB access shows all rows.
 - Old vanilla JS files removed from repo 2026-03-21 (app.js, auth.js, data.js, db.js, views.js, style.css, supabase.js)
@@ -194,4 +199,7 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - **FAZA 1 (DONE):** Supabase (PostgreSQL + Auth + RLS) replaces localStorage. Deployed on Vercel.
 - **FAZA 2 (DONE):** Data pipeline — Edge Function syncs Sheets → Supabase at 8:00 + 9:00 daily. Deployed 2026-03-21.
 - **FAZA 3 (DONE):** React + Vite + Tailwind frontend. Build verified 2026-03-21.
-- **FAZA 4:** Direct API integrations, automated reporting, white-label, AI insights
+- **FAZA 4A (DONE):** Client onboarding via Admin UI — no SQL needed. Deployed 2026-03-24.
+- **FAZA 4B (DONE):** Generic report engine — config-driven PDF reports, no custom JS per client. Generic AI narrative worker. Deployed 2026-03-24.
+- **FAZA 4C:** AI insights & alerts (anomaly detection, budget pacing)
+- **FAZA 4D:** Direct API integrations (when Google Sheets becomes bottleneck)
