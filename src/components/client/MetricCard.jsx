@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Line } from 'react-chartjs-2'
 import { METRIC_LABELS, fmtMetric } from '../../lib/data'
 
@@ -7,7 +8,7 @@ const sparkColors = {
   clicks: '#06b6d4', cpc: '#ec4899'
 }
 
-export default function MetricCard({ metric, value, currency, mom, dailyData, index }) {
+export default memo(function MetricCard({ metric, value, currency, mom, dailyData, index }) {
   const color = sparkColors[metric] || '#94a3b8'
 
   return (
@@ -54,4 +55,4 @@ export default function MetricCard({ metric, value, currency, mom, dailyData, in
       )}
     </div>
   )
-}
+})

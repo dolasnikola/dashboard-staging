@@ -1,5 +1,5 @@
 import { sb } from './supabase'
-import { _cache, dbGetCampaignData } from './cache'
+import { _cache, dbGetCampaignData, isClientCacheValid, touchClient, clearClientCache } from './cache'
 
 // ============== CLIENTS ==============
 
@@ -40,6 +40,11 @@ export async function prefetchClientData(clientId) {
     console.log(`[prefetchClientData] Already in progress for ${clientId}, skipping`)
     return
   }
+  // Skip if cache is still fresh (TTL not expired)
+  if (isClientCacheValid(clientId)) {
+    touchClient(clientId) // refresh LRU position
+    return
+  }
   _prefetchInProgress[clientId] = true
 
   try {
@@ -64,20 +69,8 @@ export async function prefetchClientData(clientId) {
       sb.from('ga4_kpi_data').select('*').eq('client_id', clientId)
     ])
 
-    // Clear cache AFTER all fetches complete
-    const campaignPrefix = `${clientId}_`
-    Object.keys(_cache.campaignData).forEach(k => {
-      if (k.startsWith(campaignPrefix)) delete _cache.campaignData[k]
-    })
-    Object.keys(_cache.budgets).forEach(k => {
-      if (k.includes(`_${clientId}_`)) delete _cache.budgets[k]
-    })
-    Object.keys(_cache.flightDays).forEach(k => {
-      if (k.includes(`_${clientId}_`)) delete _cache.flightDays[k]
-    })
-    Object.keys(_cache.ga4Data).forEach(k => {
-      if (k.startsWith(`ga4_${clientId}_`)) delete _cache.ga4Data[k]
-    })
+    // Clear old cache for this client, then repopulate
+    clearClientCache(clientId)
 
     // Populate cache
     allCampaignRows.forEach(row => {
@@ -125,62 +118,47 @@ export async function prefetchClientData(clientId) {
       })
     }
 
-    _cache._prefetched[clientId] = true
+    touchClient(clientId)
   } finally {
     delete _prefetchInProgress[clientId]
   }
 }
 
-export async function prefetchHomepageData() {
-  const allCampaignData = []
-  let from = 0
-  const pageSize = 1000
-  while (true) {
-    const { data, error } = await sb.from('campaign_data')
-      .select('*')
-      .order('date', { ascending: true })
-      .range(from, from + pageSize - 1)
-    if (error) {
-      console.error('[prefetchHomepage] campaign_data error:', error.message)
-      break
-    }
-    if (!data || data.length === 0) break
-    allCampaignData.push(...data)
-    if (data.length < pageSize) break
-    from += pageSize
+export async function fetchHomepageSummary(month) {
+  const { data, error } = await sb.rpc('get_homepage_summary', { p_month: month })
+  if (error) {
+    console.error('[fetchHomepageSummary] error:', error.message)
+    return
   }
 
-  const { data: budgetData, error: budgetError } = await sb.from('budgets').select('*')
-  if (budgetError) console.error('[prefetchHomepage] budgets error:', budgetError.message)
-
-  console.log(`[prefetchHomepage] Loaded ${allCampaignData.length} campaign rows, ${budgetData?.length || 0} budgets from Supabase`)
-
-  _cache.campaignData = {}
-  allCampaignData.forEach(row => {
-    const key = `${row.client_id}_${row.platform}_${row.month}`
-    if (!_cache.campaignData[key]) _cache.campaignData[key] = []
-    _cache.campaignData[key].push({
-      campaign: row.campaign,
-      insertion_order: row.insertion_order || '',
-      date: row.date,
-      impressions: Number(row.impressions) || 0,
-      clicks: Number(row.clicks) || 0,
-      spend: Number(row.spend) || 0,
-      reach: Number(row.reach) || 0,
-      conversions: Number(row.conversions) || 0,
-      conv_value: Number(row.conv_value) || 0,
-      ctr: Number(row.ctr) || 0,
-      cpm: Number(row.cpm) || 0,
-      cpc: Number(row.cpc) || 0,
-      cpa: Number(row.cpa) || 0
-    })
+  _cache.homepageSummary = {}
+  ;(data || []).forEach(row => {
+    const key = `${row.client_id}_${row.platform}_${month}`
+    _cache.homepageSummary[key] = {
+      spend: row.total_spend || 0,
+      impressions: row.total_impressions || 0,
+      clicks: row.total_clicks || 0,
+      conversions: row.total_conversions || 0
+    }
   })
+
+  const { data: budgetData, error: budgetError } = await sb.from('budgets').select('*')
+  if (budgetError) console.error('[fetchHomepageSummary] budgets error:', budgetError.message)
 
   if (budgetData) {
     budgetData.forEach(row => {
       _cache.budgets[`budget_${row.client_id}_${row.platform}_${row.month}`] = Number(row.amount) || 0
     })
   }
+
+  console.log(`[fetchHomepageSummary] Loaded ${(data || []).length} platform summaries, ${budgetData?.length || 0} budgets`)
+}
+
+// Legacy alias — kept for backward compatibility with sync flow
+export async function prefetchHomepageData() {
+  const now = new Date()
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  return fetchHomepageSummary(month)
 }
 
 // ============== CAMPAIGN DATA (write) ==============

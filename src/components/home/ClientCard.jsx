@@ -1,19 +1,18 @@
+import { memo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { dbGetCampaignData, dbGetBudget } from '../../lib/cache'
+import { getHomepageSummary, dbGetBudget } from '../../lib/cache'
 import { fmt, PLATFORM_NAMES, PLATFORM_BADGE } from '../../lib/data'
 
-export default function ClientCard({ id, client, currentMonth, index }) {
+export default memo(function ClientCard({ id, client, currentMonth, index }) {
   const navigate = useNavigate()
 
   let totalSpend = 0, totalBudget = 0, totalImpressions = 0, totalClicks = 0, totalConversions = 0
   client.platforms.forEach(p => {
-    const rows = dbGetCampaignData(id, p, currentMonth)
-    rows.forEach(r => {
-      totalSpend += r.spend || 0
-      totalImpressions += r.impressions || 0
-      totalClicks += r.clicks || 0
-      totalConversions += r.conversions || 0
-    })
+    const summary = getHomepageSummary(id, p, currentMonth)
+    totalSpend += summary.spend
+    totalImpressions += summary.impressions
+    totalClicks += summary.clicks
+    totalConversions += summary.conversions
     totalBudget += dbGetBudget(id, p, currentMonth)
   })
 
@@ -89,7 +88,7 @@ export default function ClientCard({ id, client, currentMonth, index }) {
       )}
     </div>
   )
-}
+})
 
 function MiniMetric({ label, value }) {
   return (

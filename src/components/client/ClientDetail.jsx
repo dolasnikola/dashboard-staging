@@ -9,7 +9,6 @@ import OverviewTab from './OverviewTab'
 import PlatformView from './PlatformView'
 import GA4View from './GA4View'
 import { PLATFORM_NAMES, PLATFORM_BADGE } from '../../lib/data'
-import { generateReport, fetchReportConfig } from '../../reports/generator'
 
 export default function ClientDetail() {
   const { clientId } = useParams()
@@ -28,8 +27,8 @@ export default function ClientDetail() {
       setActivePlatform(client.defaultPlatform || client.platforms[0])
       setIsLoading(false)
     })
-    // Check if this client has a report config
-    fetchReportConfig(clientId).then(config => setHasReportConfig(!!config))
+    // Check if this client has a report config (dynamic import for code splitting)
+    import('../../reports/generator').then(m => m.fetchReportConfig(clientId)).then(config => setHasReportConfig(!!config))
   }, [clientId, !!client])
 
   if (!client) {
@@ -70,6 +69,7 @@ export default function ClientDetail() {
                   disabled={!!reportStatus}
                   onClick={async () => {
                     setReportStatus('Ucitavanje...')
+                    const { generateReport } = await import('../../reports/generator')
                     await generateReport(clientId, null, (msg) => setReportStatus(msg))
                     setReportStatus(null)
                   }}

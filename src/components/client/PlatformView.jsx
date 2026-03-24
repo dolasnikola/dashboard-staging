@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useAppStore } from '../../stores/appStore'
 import { getFilteredData, aggregateByCampaign, getPrevPeriodAgg, getMoMChange, getDailyTotals, groupByProduct } from '../../lib/utils'
 import { PLATFORM_NAMES, METRIC_LABELS, fmtMetric, NLB_PRODUCTS } from '../../lib/data'
@@ -18,49 +19,54 @@ export default function PlatformView({ clientId, client, platform }) {
     )
   }
 
-  const rawRows = getFilteredData(clientId, platform, activeDateRange, customDateFrom, customDateTo)
-  const rows = aggregateByCampaign(rawRows)
-  const typeClass = setup.type === 'performance' ? 'type-performance' : setup.type === 'traffic' ? 'type-traffic' : 'type-awareness'
+  const { rawRows, rows, agg, prevAgg, prevLabel, dailyData, tableCols, chartLabels, metricKey } = useMemo(() => {
+    const rawRows = getFilteredData(clientId, platform, activeDateRange, customDateFrom, customDateTo)
+    const rows = aggregateByCampaign(rawRows)
 
-  // Aggregate metrics
-  const agg = {}
-  setup.metrics.forEach(m => agg[m] = 0)
-  rows.forEach(r => {
-    if (agg.impressions !== undefined) agg.impressions += r.impressions || 0
-    if (agg.reach !== undefined) agg.reach += r.reach || 0
-    if (agg.clicks !== undefined) agg.clicks += r.clicks || 0
-    if (agg.conversions !== undefined) agg.conversions += r.conversions || 0
-    if (agg.conv_value !== undefined) agg.conv_value += r.conv_value || 0
-    if (agg.spend !== undefined) agg.spend += r.spend || 0
-  })
-  if (agg.cpm !== undefined) agg.cpm = agg.impressions > 0 ? agg.spend / agg.impressions * 1000 : 0
-  if (agg.ctr !== undefined) agg.ctr = agg.impressions > 0 ? agg.clicks / agg.impressions * 100 : 0
-  if (agg.cpc !== undefined) agg.cpc = agg.clicks > 0 ? agg.spend / agg.clicks : 0
-  if (agg.cpa !== undefined) {
-    const pmaxRows = rows.filter(r => r.campaign && /pmax|performance.?max/i.test(r.campaign))
-    if (pmaxRows.length > 0) {
-      const pmaxConv = pmaxRows.reduce((s, r) => s + (r.conversions || 0), 0)
-      const pmaxSpend = pmaxRows.reduce((s, r) => s + (r.spend || 0), 0)
-      agg.cpa = pmaxConv > 0 ? pmaxSpend / pmaxConv : 0
-    } else {
-      agg.cpa = agg.conversions > 0 ? agg.spend / agg.conversions : 0
+    // Aggregate metrics
+    const agg = {}
+    setup.metrics.forEach(m => agg[m] = 0)
+    rows.forEach(r => {
+      if (agg.impressions !== undefined) agg.impressions += r.impressions || 0
+      if (agg.reach !== undefined) agg.reach += r.reach || 0
+      if (agg.clicks !== undefined) agg.clicks += r.clicks || 0
+      if (agg.conversions !== undefined) agg.conversions += r.conversions || 0
+      if (agg.conv_value !== undefined) agg.conv_value += r.conv_value || 0
+      if (agg.spend !== undefined) agg.spend += r.spend || 0
+    })
+    if (agg.cpm !== undefined) agg.cpm = agg.impressions > 0 ? agg.spend / agg.impressions * 1000 : 0
+    if (agg.ctr !== undefined) agg.ctr = agg.impressions > 0 ? agg.clicks / agg.impressions * 100 : 0
+    if (agg.cpc !== undefined) agg.cpc = agg.clicks > 0 ? agg.spend / agg.clicks : 0
+    if (agg.cpa !== undefined) {
+      const pmaxRows = rows.filter(r => r.campaign && /pmax|performance.?max/i.test(r.campaign))
+      if (pmaxRows.length > 0) {
+        const pmaxConv = pmaxRows.reduce((s, r) => s + (r.conversions || 0), 0)
+        const pmaxSpend = pmaxRows.reduce((s, r) => s + (r.spend || 0), 0)
+        agg.cpa = pmaxConv > 0 ? pmaxSpend / pmaxConv : 0
+      } else {
+        agg.cpa = agg.conversions > 0 ? agg.spend / agg.conversions : 0
+      }
     }
-  }
 
-  // MoM
-  const { agg: prevAgg, label: prevLabel } = getPrevPeriodAgg(clientId, platform, setup, activeDateRange, customDateFrom, customDateTo)
+    // MoM
+    const { agg: prevAgg, label: prevLabel } = getPrevPeriodAgg(clientId, platform, setup, activeDateRange, customDateFrom, customDateTo)
 
-  // Daily data for sparklines
-  const dailyData = getDailyTotals(rawRows, setup.metrics)
+    // Daily data for sparklines
+    const dailyData = getDailyTotals(rawRows, setup.metrics)
 
-  // Campaign table columns
-  const hasDV360IO = platform === 'dv360' && rows.some(r => r.insertion_order)
-  const tableCols = hasDV360IO ? ['campaign', 'insertion_order', ...setup.metrics] : ['campaign', ...setup.metrics]
+    // Campaign table columns
+    const hasDV360IO = platform === 'dv360' && rows.some(r => r.insertion_order)
+    const tableCols = hasDV360IO ? ['campaign', 'insertion_order', ...setup.metrics] : ['campaign', ...setup.metrics]
 
-  // Chart data
-  const chartLabels = rows.map(r => r.campaign?.length > 30 ? r.campaign.substring(0, 30) + '...' : r.campaign)
+    // Chart data
+    const chartLabels = rows.map(r => r.campaign?.length > 30 ? r.campaign.substring(0, 30) + '...' : r.campaign)
+    const metricKey = setup.type === 'performance' ? 'conversions' : setup.type === 'traffic' ? 'clicks' : 'impressions'
+
+    return { rawRows, rows, agg, prevAgg, prevLabel, dailyData, tableCols, chartLabels, metricKey }
+  }, [clientId, platform, activeDateRange, customDateFrom, customDateTo, setup])
+
+  const typeClass = setup.type === 'performance' ? 'type-performance' : setup.type === 'traffic' ? 'type-traffic' : 'type-awareness'
   const colors = ['#4a6cf7', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
-  const metricKey = setup.type === 'performance' ? 'conversions' : setup.type === 'traffic' ? 'clicks' : 'impressions'
 
   return (
     <div>

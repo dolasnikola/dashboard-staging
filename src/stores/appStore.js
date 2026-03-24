@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { fetchClients, prefetchHomepageData, dbGetSheetLinks } from '../lib/db'
+import { fetchClients, fetchHomepageSummary, dbGetSheetLinks } from '../lib/db'
 import { getSheetLinks } from '../lib/cache'
 import { syncAllSheets, syncGA4Sheet } from '../lib/sync'
 
@@ -26,7 +26,9 @@ export const useAppStore = create((set, get) => ({
         return
       }
 
-      await Promise.all([prefetchHomepageData(), dbGetSheetLinks()])
+      const now = new Date()
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      await Promise.all([fetchHomepageSummary(currentMonth), dbGetSheetLinks()])
       set({ isInitialized: true, isInitializing: false })
 
       // Auto-sync from sheets after dashboard loads

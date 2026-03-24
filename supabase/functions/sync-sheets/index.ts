@@ -75,37 +75,51 @@ Deno.serve(async (req: Request) => {
     let sheetsFailed = 0;
     let totalRows = 0;
 
-    // Process each sheet sequentially
-    for (const link of links) {
-      if (!link.sheet_url || !link.sheet_url.includes("/pub")) continue;
+    // Process sheets in parallel batches of 5
+    const validLinks = links.filter(l => l.sheet_url && l.sheet_url.includes("/pub"));
+    const BATCH_SIZE = 5;
 
-      let result: SyncResult;
+    for (let i = 0; i < validLinks.length; i += BATCH_SIZE) {
+      const batch = validLinks.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (link) => {
+          try {
+            if (link.platform === "ga4") {
+              return await syncGA4Sheet(supabase, link.client_id, link.sheet_url);
+            } else {
+              return await syncCampaignSheet(
+                supabase,
+                link.client_id,
+                link.platform,
+                link.sheet_url
+              );
+            }
+          } catch (err) {
+            return {
+              clientId: link.client_id,
+              platform: link.platform,
+              status: "error" as const,
+              rows: 0,
+              error: (err as Error).message || String(err),
+            };
+          }
+        })
+      );
 
-      if (link.platform === "ga4") {
-        result = await syncGA4Sheet(supabase, link.client_id, link.sheet_url);
-      } else {
-        result = await syncCampaignSheet(
-          supabase,
-          link.client_id,
-          link.platform,
-          link.sheet_url
+      for (const result of batchResults) {
+        results.push(result);
+        if (result.status === "ok") {
+          sheetsOk++;
+          totalRows += result.rows || 0;
+        } else {
+          sheetsFailed++;
+        }
+        console.log(
+          `[sync] ${result.clientId}/${result.platform}: ${result.status}` +
+            (result.rows ? ` (${result.rows} rows)` : "") +
+            (result.error ? ` — ${result.error}` : "")
         );
       }
-
-      results.push(result);
-
-      if (result.status === "ok") {
-        sheetsOk++;
-        totalRows += result.rows || 0;
-      } else {
-        sheetsFailed++;
-      }
-
-      console.log(
-        `[sync] ${link.client_id}/${link.platform}: ${result.status}` +
-          (result.rows ? ` (${result.rows} rows)` : "") +
-          (result.error ? ` — ${result.error}` : "")
-      );
     }
 
     // Update sync_log

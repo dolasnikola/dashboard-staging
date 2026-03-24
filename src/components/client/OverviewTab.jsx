@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useAppStore } from '../../stores/appStore'
 import { getFilteredData } from '../../lib/utils'
 import { fmt, PLATFORM_NAMES } from '../../lib/data'
@@ -6,46 +7,49 @@ import { Doughnut, Bar } from 'react-chartjs-2'
 export default function OverviewTab({ clientId, client }) {
   const { activeDateRange, customDateFrom, customDateTo } = useAppStore()
 
-  let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalConversions = 0, totalConvValue = 0, totalReach = 0
-  const platformSpends = {}
+  const { metrics, pieLabels, pieData, barClicks, barImpressions } = useMemo(() => {
+    let totalSpend = 0, totalImpressions = 0, totalClicks = 0, totalConversions = 0, totalConvValue = 0, totalReach = 0
+    const platformSpends = {}
+    const barClicks = [], barImpressions = []
 
-  client.platforms.forEach(p => {
-    const rows = getFilteredData(clientId, p, activeDateRange, customDateFrom, customDateTo)
-    let pSpend = 0
-    rows.forEach(r => {
-      totalSpend += r.spend || 0
-      totalImpressions += r.impressions || 0
-      totalClicks += r.clicks || 0
-      totalConversions += r.conversions || 0
-      totalConvValue += r.conv_value || 0
-      totalReach += r.reach || 0
-      pSpend += r.spend || 0
+    client.platforms.forEach(p => {
+      const rows = getFilteredData(clientId, p, activeDateRange, customDateFrom, customDateTo)
+      let pSpend = 0, pClicks = 0, pImpressions = 0
+      rows.forEach(r => {
+        totalSpend += r.spend || 0
+        totalImpressions += r.impressions || 0
+        totalClicks += r.clicks || 0
+        totalConversions += r.conversions || 0
+        totalConvValue += r.conv_value || 0
+        totalReach += r.reach || 0
+        pSpend += r.spend || 0
+        pClicks += r.clicks || 0
+        pImpressions += r.impressions || 0
+      })
+      platformSpends[p] = pSpend
+      barClicks.push(pClicks)
+      barImpressions.push(pImpressions)
     })
-    platformSpends[p] = pSpend
-  })
 
-  const overallCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0
-  const overallCPM = totalImpressions > 0 ? (totalSpend / totalImpressions * 1000) : 0
+    const overallCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0
+    const overallCPM = totalImpressions > 0 ? (totalSpend / totalImpressions * 1000) : 0
 
-  const pieLabels = Object.keys(platformSpends).map(p => PLATFORM_NAMES[p])
-  const pieData = Object.values(platformSpends)
+    const pieLabels = Object.keys(platformSpends).map(p => PLATFORM_NAMES[p])
+    const pieData = Object.values(platformSpends)
+
+    const metrics = [
+      { label: 'Total Spend', value: fmt(totalSpend, 'money2', client.currency) },
+      { label: 'Impressions', value: fmt(totalImpressions, 'number') },
+      { label: 'Clicks', value: fmt(totalClicks, 'number') },
+      { label: 'Reach', value: fmt(totalReach, 'number') },
+      { label: 'CTR', value: overallCTR.toFixed(2) + '%' },
+      { label: 'CPM', value: fmt(overallCPM, 'money2', client.currency) },
+    ]
+
+    return { metrics, pieLabels, pieData, barClicks, barImpressions }
+  }, [clientId, client, activeDateRange, customDateFrom, customDateTo])
+
   const pieColors = ['#ea4335', '#1877f2', '#8b5cf6', '#010101']
-
-  const barClicks = [], barImpressions = []
-  client.platforms.forEach(p => {
-    const rows = getFilteredData(clientId, p, activeDateRange, customDateFrom, customDateTo)
-    barClicks.push(rows.reduce((s, r) => s + (r.clicks || 0), 0))
-    barImpressions.push(rows.reduce((s, r) => s + (r.impressions || 0), 0))
-  })
-
-  const metrics = [
-    { label: 'Total Spend', value: fmt(totalSpend, 'money2', client.currency) },
-    { label: 'Impressions', value: fmt(totalImpressions, 'number') },
-    { label: 'Clicks', value: fmt(totalClicks, 'number') },
-    { label: 'Reach', value: fmt(totalReach, 'number') },
-    { label: 'CTR', value: overallCTR.toFixed(2) + '%' },
-    { label: 'CPM', value: fmt(overallCPM, 'money2', client.currency) },
-  ]
 
   return (
     <div>

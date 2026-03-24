@@ -22,8 +22,8 @@ Built with React 19, Vite 8, Tailwind CSS v4, Zustand for state management, reac
 
 ### Data Layer (`src/lib/`)
 - `supabase.js` — Supabase client init, exports `sb`
-- `cache.js` — In-memory `_cache` object + synchronous read functions (dbGetCampaignData, dbGetBudget, dbGetFlightDays, dbGetGA4Data, dbGetAllCampaignDataForPlatform, getSheetLinks, clearCache)
-- `db.js` — Async Supabase queries: fetchClients (with preferredOrder), prefetchClientData (per-client guard), prefetchHomepageData (pagination), dbSaveCampaignData (deduplication), admin functions, dbGetLastSync, runDiagnostics (exposed to window)
+- `cache.js` — In-memory `_cache` object + synchronous read functions (dbGetCampaignData, dbGetBudget, dbGetFlightDays, dbGetGA4Data, dbGetAllCampaignDataForPlatform, getHomepageSummary, getSheetLinks, clearCache)
+- `db.js` — Async Supabase queries: fetchClients (with preferredOrder), prefetchClientData (per-client guard), fetchHomepageSummary (server-side aggregation via RPC), dbSaveCampaignData (deduplication), admin functions, dbGetLastSync, runDiagnostics (exposed to window)
 - `data.js` — Constants (PLATFORM_NAMES, PLATFORM_BADGE, METRIC_LABELS, NLB_PRODUCTS), formatting (fmt, fmtMetric), CSV parsing (parseCSV, detectPlatform, mapRow)
 - `utils.js` — Date range helpers (getDateRangeBounds, getMonthsInRange), filtering (getFilteredData), aggregation (aggregateByCampaign, groupByProduct), MoM comparison (getMoMChange returns object, not HTML), getDailyTotals
 - `sync.js` — Google Sheets sync (syncOneSheet, syncAllSheets with _syncInProgress guard, syncGA4Sheet), uses callbacks for status updates
@@ -33,6 +33,10 @@ Built with React 19, Vite 8, Tailwind CSS v4, Zustand for state management, reac
 - `appStore.js` — Zustand: clients, activeDateRange, customDateFrom/To, notification + initDashboard(), setDateRange(), notify(), refreshClients()
 
 **Key design decision:** Campaign data cache (`_cache`) lives outside Zustand/React state. Thousands of rows in React state = re-render hell. Components read cache via `src/lib/cache.js` functions. Zustand holds only metadata and UI state.
+
+**Homepage uses server-side aggregation (FAZA 4C):** `_cache.homepageSummary` holds pre-aggregated metrics per client/platform/month (from RPC `get_homepage_summary`). ClientCard reads summary, not raw campaign rows. Raw rows are only loaded when user opens a specific client via `prefetchClientData()`.
+
+**Cache TTL + LRU (FAZA 4C):** Client campaign data expires after 5 minutes (`CACHE_TTL_MS`). Max 5 clients cached simultaneously (`MAX_CACHED_CLIENTS`). LRU eviction removes oldest client when limit exceeded. Functions: `isClientCacheValid()`, `touchClient()`, `clearClientCache()` in `cache.js`.
 
 ### Components (`src/components/`)
 ```
@@ -84,7 +88,7 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 ```
 - On login: `checkSession()` → `authStore.loadProfile()` → `appStore.initDashboard()`:
   - `fetchClients()` from Supabase → populate `clients` in store
-  - `prefetchHomepageData()` loads all campaign_data + budgets into `_cache` (with pagination)
+  - `fetchHomepageSummary(month)` calls RPC `get_homepage_summary` for aggregated metrics + loads budgets into `_cache`
   - `dbGetSheetLinks()` loads sheet URLs into cache
   - React Router renders `HomePage` with client cards from cache
 - On client open: React Router renders `ClientDetail` → `prefetchClientData(id)` → components read from cache
@@ -147,7 +151,7 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 - `vercel.json` configured with build command, output directory, and SPA rewrite rule
 
 ## Dependencies (package.json)
-- react, react-dom, react-router-dom, @supabase/supabase-js, chart.js, react-chartjs-2, zustand, jspdf, jspdf-autotable
+- react, react-dom, react-router-dom, @supabase/supabase-js, chart.js, react-chartjs-2, zustand, jspdf, jspdf-autotable, @tanstack/react-virtual
 - Dev: vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite
 
 ## FAZA 2: Automated Data Sync (DONE)
@@ -207,5 +211,6 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - **FAZA 3 (DONE):** React + Vite + Tailwind frontend. Build verified 2026-03-21.
 - **FAZA 4A (DONE):** Client onboarding via Admin UI — no SQL needed. Deployed 2026-03-24.
 - **FAZA 4B (DONE):** Generic report engine — config-driven PDF reports, no custom JS per client. Generic AI narrative worker. Deployed 2026-03-24.
-- **FAZA 4C:** AI insights & alerts (anomaly detection, budget pacing)
-- **FAZA 4D:** Direct API integrations (when Google Sheets becomes bottleneck)
+- **FAZA 4C (DONE):** Scaling for 50+ clients — DB indexes, server-side aggregation via `get_homepage_summary()` RPC, React memoization (useMemo/React.memo), sync parallelization (batch of 5), table virtualization (@tanstack/react-virtual), code splitting (jsPDF lazy loaded), cache TTL (5min) + LRU eviction (max 5 clients). Deployed 2026-03-25.
+- **FAZA 4D:** AI insights & alerts (anomaly detection, budget pacing)
+- **FAZA 4E:** Direct API integrations (when Google Sheets becomes bottleneck)

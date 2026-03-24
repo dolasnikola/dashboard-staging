@@ -22,6 +22,7 @@
   "homepage": "https://github.com/dolasnikola/dashboard-staging#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
+    "@tanstack/react-virtual": "^3.13.23",
     "chart.js": "^4.5.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
