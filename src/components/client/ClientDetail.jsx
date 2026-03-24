@@ -19,6 +19,7 @@ export default function ClientDetail() {
   const [isLoading, setIsLoading] = useState(true)
   const [activePlatform, setActivePlatform] = useState(null)
   const [hasReportConfig, setHasReportConfig] = useState(false)
+  const [reportStatus, setReportStatus] = useState(null) // null | 'loading' | string
 
   useEffect(() => {
     if (!client) return
@@ -65,8 +66,15 @@ export default function ClientDetail() {
                 {client.currency}
               </span>
               {hasReportConfig && (
-                <button className="btn btn-primary" onClick={() => generateReport(clientId)}>
-                  Mesecni izvestaj
+                <button className="btn btn-primary"
+                  disabled={!!reportStatus}
+                  onClick={async () => {
+                    setReportStatus('Ucitavanje...')
+                    await generateReport(clientId, null, (msg) => setReportStatus(msg))
+                    setReportStatus(null)
+                  }}
+                  style={reportStatus ? { opacity: 0.7, cursor: 'wait' } : {}}>
+                  {reportStatus || 'Mesecni izvestaj'}
                 </button>
               )}
             </div>

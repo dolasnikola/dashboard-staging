@@ -36,10 +36,17 @@ function buildSystemPrompt(clientName, promptContext, platformKeys) {
 - Za svaki kanal navedi kljucne metrike (impresije, klikovi, CTR, budzet)
 - Zavrsi sa ukupnim ulaganjem i generalnim zakljuckom o performansama
 
-Za SVAKU PLATFORMU:
-- Analiziraj ukupne rezultate (impresije, klikovi, CTR, budzet)
-- Izdvoj najbolje kampanje po impresijama i po CTR-u
-- Daj kratak zakljucak o efikasnosti platforme
+KRITICNO PRAVILO — IZOLACIJA PLATFORMI:
+Svaki kljuc u JSON odgovoru (npr. "google_ads", "meta", "dv360") MORA da sadrzi ISKLJUCIVO analizu podataka za TU JEDNU platformu.
+- NE pominji podatke jedne platforme u tekstu za drugu platformu
+- NE pominji GDN/Display u Google Search tekstu i obrnuto
+- NE pominji Meta podatke u Google tekstu i obrnuto
+- Svaka sekcija je NEZAVISNA analiza samo svojih podataka
+
+Za SVAKU PLATFORMU (pisati SAMO o toj platformi):
+- Analiziraj ukupne rezultate (impresije, klikovi, CTR, budzet) SAMO za tu platformu
+- Izdvoj najbolje kampanje po impresijama i po CTR-u SAMO iz te platforme
+- Daj kratak zakljucak o efikasnosti te platforme
 - Ako platforma ima reach podatke, ukljuci ih u analizu
 - Ako platforma ima CPM podatke, komentarisi cost-efficiency`
 
