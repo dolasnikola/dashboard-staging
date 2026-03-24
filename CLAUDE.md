@@ -68,9 +68,13 @@ ui/Notification.jsx         — Toast notification from appStore
 ### Static Assets
 - `public/creatives/<client>/` — Ad creative images organized by client and platform
 
+### Cloudflare Worker (`worker/`)
+- `worker/src/index.js` — Generic AI narrative generator for monthly reports. Receives campaign data + `clientName` + `promptContext`, returns per-platform narratives in JSON. Uses Claude API (claude-sonnet-4). Strict platform isolation in prompts. Deploy: `cd worker && npx wrangler deploy`
+- `worker/wrangler.toml` — Worker config. Secret: `ANTHROPIC_API_KEY` (set via `npx wrangler secret put`)
+
 ### Supabase (`supabase/`)
 - `supabase/functions/sync-sheets/` — FAZA 2 Edge Function for automated data sync
-- `supabase/migrations/` — SQL migrations for sync_log table, RPC functions, pg_cron setup
+- `supabase/migrations/` — SQL migrations for sync_log table, RPC functions, pg_cron setup, report engine tables
 
 ## Data Flow
 ```
@@ -194,6 +198,8 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - **Hosting must be HTTPS** — Supabase API calls fail on HTTP due to mixed-content blocking
 - **User role defaults to `viewer`** — new users get `viewer` role via trigger. Must manually set to `admin` via SQL for full access
 - `getMoMChange()` returns `{change, isGood, cls, arrow, label}` object (not HTML string) for React rendering
+- **Report AI Worker CORS** — `report-narratives-api` worker only allows requests from the Vercel production URL. AI narratives fail on localhost (expected) — generator.js falls back to local text generation. To test AI locally, temporarily set `ALLOWED_ORIGIN` to `*` in wrangler.toml
+- **jspdf-autotable** requires explicit `applyPlugin(jsPDF)` — side-effect `import 'jspdf-autotable'` alone does NOT work
 
 ## Scaling Roadmap (Approved March 2026)
 - **FAZA 1 (DONE):** Supabase (PostgreSQL + Auth + RLS) replaces localStorage. Deployed on Vercel.
