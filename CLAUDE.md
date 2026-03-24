@@ -164,6 +164,8 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - `sync-ga4.ts` — GA4 KPI sync (Serbian/English column names)
 - `types.ts` — TypeScript interfaces
 
+**pg_net timeout:** Default 5s was too short — set to `timeout_milliseconds := 120000` (2 min) in all 3 cron jobs. Fixed 2026-03-21.
+
 **Status: DONE (deployed 2026-03-21)**
 - To redeploy: `cd dashboard-staging && supabase functions deploy sync-sheets --no-verify-jwt`
 
@@ -173,7 +175,8 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - Debug logging active in `src/lib/db.js` (`[prefetchHomepage]`, `[dbSave]`) — remove after stabilization
 - Client display order maintained via hardcoded `preferredOrder` in `fetchClients()` — will add `sort_order` DB column later
 - Budgets show 0 until set via Budget modal
-- Old vanilla JS files (supabase.js, db.js, data.js, views.js, app.js, auth.js, style.css) still in root — to be removed after FAZA 3 verification
+- `sync_log` table has RLS — anon key returns empty array. Frontend reads via authenticated user session. Direct DB access shows all rows.
+- Old vanilla JS files removed from repo 2026-03-21 (app.js, auth.js, data.js, db.js, views.js, style.css, supabase.js)
 
 ## Gotchas
 - **Supabase client is `sb`, NOT `supabase`** — historical naming to avoid CDN conflict

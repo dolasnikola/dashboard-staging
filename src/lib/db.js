@@ -4,16 +4,16 @@ import { _cache, dbGetCampaignData } from './cache'
 // ============== CLIENTS ==============
 
 export async function fetchClients() {
-  const { data, error } = await sb.from('clients').select('*')
+  const { data, error } = await sb.from('clients').select('*').order('name', { ascending: true })
 
   if (error) {
     console.error('[fetchClients] error:', error.message)
     return {}
   }
 
-  const clientMap = {}
+  const clients = {}
   data.forEach(row => {
-    clientMap[row.id] = {
+    clients[row.id] = {
       name: row.name,
       currency: row.currency,
       status: row.status,
@@ -22,14 +22,10 @@ export async function fetchClients() {
       platforms: row.platforms,
       tiktok: row.tiktok,
       setup: row.setup,
-      budgetNote: row.budget_note
+      budgetNote: row.budget_note,
+      sortOrder: row.sort_order
     }
   })
-
-  const preferredOrder = ['nlb', 'urban', 'krka']
-  const clients = {}
-  preferredOrder.forEach(id => { if (clientMap[id]) clients[id] = clientMap[id] })
-  Object.keys(clientMap).forEach(id => { if (!clients[id]) clients[id] = clientMap[id] })
 
   _cache.clients = clients
   return clients
@@ -281,6 +277,59 @@ export async function dbSaveGA4Data(clientId, month, rows) {
     const { error } = await sb.from('ga4_kpi_data').upsert(records, { onConflict: 'client_id,month,product' })
     if (error) console.error('[dbSave] GA4 upsert error:', error.message)
   }
+}
+
+// ============== CLIENT MANAGEMENT (FAZA 4A) ==============
+
+export async function dbCreateClient(clientData) {
+  const record = {
+    id: clientData.id,
+    name: clientData.name,
+    currency: clientData.currency || 'EUR',
+    status: clientData.status || 'active',
+    status_label: clientData.statusLabel || 'Aktivna kampanja',
+    default_platform: clientData.defaultPlatform || clientData.platforms?.[0] || 'google_ads',
+    platforms: clientData.platforms || [],
+    tiktok: clientData.platforms?.includes('tiktok') || false,
+    setup: clientData.setup || {},
+    budget_note: clientData.budgetNote || '',
+    sort_order: clientData.sortOrder ?? 100
+  }
+  const { error } = await sb.from('clients').insert(record)
+  if (error) { console.error('[dbCreateClient]', error.message); return false }
+  return true
+}
+
+export async function dbUpdateClient(clientId, updates) {
+  const record = {}
+  if (updates.name !== undefined) record.name = updates.name
+  if (updates.currency !== undefined) record.currency = updates.currency
+  if (updates.status !== undefined) record.status = updates.status
+  if (updates.statusLabel !== undefined) record.status_label = updates.statusLabel
+  if (updates.defaultPlatform !== undefined) record.default_platform = updates.defaultPlatform
+  if (updates.platforms !== undefined) {
+    record.platforms = updates.platforms
+    record.tiktok = updates.platforms.includes('tiktok')
+  }
+  if (updates.setup !== undefined) record.setup = updates.setup
+  if (updates.budgetNote !== undefined) record.budget_note = updates.budgetNote
+  if (updates.sortOrder !== undefined) record.sort_order = updates.sortOrder
+  const { error } = await sb.from('clients').update(record).eq('id', clientId)
+  if (error) { console.error('[dbUpdateClient]', error.message); return false }
+  return true
+}
+
+export async function dbDeleteClient(clientId) {
+  // Brisanje povezanih podataka prvo (sheet_links, budgets, campaign_data, etc.)
+  await sb.from('sheet_links').delete().eq('client_id', clientId)
+  await sb.from('budgets').delete().eq('client_id', clientId)
+  await sb.from('flight_days').delete().eq('client_id', clientId)
+  await sb.from('ga4_kpi_data').delete().eq('client_id', clientId)
+  await sb.from('campaign_data').delete().eq('client_id', clientId)
+  await sb.from('user_client_access').delete().eq('client_id', clientId)
+  const { error } = await sb.from('clients').delete().eq('id', clientId)
+  if (error) { console.error('[dbDeleteClient]', error.message); return false }
+  return true
 }
 
 // ============== SHEET LINKS ==============
