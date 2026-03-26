@@ -125,6 +125,7 @@ export async function prefetchClientData(clientId) {
         if (!_cache.localDisplay[key]) _cache.localDisplay[key] = []
         _cache.localDisplay[key].push({
           campaign: row.campaign,
+          month: row.month,
           publisher: row.publisher,
           format: row.format,
           type: row.type,

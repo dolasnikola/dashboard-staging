@@ -57,7 +57,9 @@ export default function LocalDisplayView({ clientId }) {
           style={{ padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 13 }}
         >
           {months.length > 0 ? months.map(val => {
-            const [y, m] = val.split('-').map(Number)
+            if (!val) return null
+            const parts = val.split('-')
+            const y = Number(parts[0]), m = Number(parts[1])
             const label = new Date(y, m - 1).toLocaleDateString('sr-Latn', { year: 'numeric', month: 'long' })
             return <option key={val} value={val}>{label}</option>
           }) : <option value="">Nema podataka</option>}
