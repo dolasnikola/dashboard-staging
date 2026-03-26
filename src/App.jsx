@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import { useAppStore } from './stores/appStore'
 import LoginGate from './components/auth/LoginGate'
+import SetPassword from './components/auth/SetPassword'
 import Header from './components/layout/Header'
 import HomePage from './components/home/HomePage'
 import ClientDetail from './components/client/ClientDetail'
@@ -11,7 +12,6 @@ import Notification from './components/ui/Notification'
 import ImportModal from './components/modals/ImportModal'
 import BudgetModal from './components/modals/BudgetModal'
 import SheetsModal from './components/modals/SheetsModal'
-import { useState } from 'react'
 
 export default function App() {
   const { isAuthenticated, isLoading, checkSession, setupAuthListener } = useAuthStore()
@@ -19,8 +19,14 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false)
   const [budgetOpen, setBudgetOpen] = useState(false)
   const [sheetsOpen, setSheetsOpen] = useState(false)
+  const [showSetPassword, setShowSetPassword] = useState(false)
 
   useEffect(() => {
+    // Detect invite or recovery token in URL hash
+    const hash = window.location.hash
+    if (hash && (hash.includes('type=invite') || hash.includes('type=recovery'))) {
+      setShowSetPassword(true)
+    }
     checkSession()
     setupAuthListener()
   }, [])
@@ -30,6 +36,16 @@ export default function App() {
       initDashboard()
     }
   }, [isAuthenticated])
+
+  if (showSetPassword) {
+    return (
+      <SetPassword onComplete={() => {
+        setShowSetPassword(false)
+        window.location.hash = ''
+        checkSession()
+      }} />
+    )
+  }
 
   if (isLoading) {
     return (
