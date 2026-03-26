@@ -73,8 +73,7 @@ export default function LocalDisplayView({ clientId }) {
             {[
               { label: 'Impressions', value: fmt(totals.impressions, 'number') },
               { label: 'Clicks', value: fmt(totals.clicks, 'number') },
-              { label: 'CTR', value: totals.ctr.toFixed(2) + '%' },
-              { label: 'Actions', value: fmt(totals.actions, 'number') }
+              { label: 'CTR', value: totals.ctr.toFixed(2) + '%' }
             ].map(card => (
               <div key={card.label} style={{
                 background: 'var(--color-card)', borderRadius: 12, padding: '20px 24px',
@@ -95,7 +94,6 @@ export default function LocalDisplayView({ clientId }) {
                   <th>Impressions</th>
                   <th>Clicks</th>
                   <th>CTR</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -105,7 +103,6 @@ export default function LocalDisplayView({ clientId }) {
                     <td>{fmt(data.impressions, 'number')}</td>
                     <td>{fmt(data.clicks, 'number')}</td>
                     <td>{data.ctr.toFixed(2)}%</td>
-                    <td>{fmt(data.actions, 'number')}</td>
                   </tr>
                 ))}
                 <tr style={{ fontWeight: 700, background: 'var(--color-bg-subtle)' }}>
@@ -113,7 +110,6 @@ export default function LocalDisplayView({ clientId }) {
                   <td>{fmt(totals.impressions, 'number')}</td>
                   <td>{fmt(totals.clicks, 'number')}</td>
                   <td>{totals.ctr.toFixed(2)}%</td>
-                  <td>{fmt(totals.actions, 'number')}</td>
                 </tr>
               </tbody>
             </table>
