@@ -19,9 +19,14 @@ export default function HomePage() {
   if (Object.keys(clients).length === 0) {
     return (
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '28px 32px' }}>
-        <div style={{ padding: 60, textAlign: 'center', color: 'var(--color-text-secondary)' }}>
-          Nema klijenata. Proveri konekciju i rolu u bazi.
-          <br /><small style={{ marginTop: 8, display: 'block' }}>Otvori F12 Console i pokreni <code>runDiagnostics()</code> za detalje.</small>
+        <div style={{ padding: 60, textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 16 }}>✓</div>
+          <div style={{ fontSize: 16, color: 'var(--color-text)', fontWeight: 500, marginBottom: 8 }}>
+            Uspešno ste se registrovali!
+          </div>
+          <div style={{ fontSize: 14, color: 'var(--color-text-secondary)', maxWidth: 360, margin: '0 auto' }}>
+            Molimo vas sačekajte da vam administrator dodeli pristup klijentima.
+          </div>
         </div>
       </div>
     )

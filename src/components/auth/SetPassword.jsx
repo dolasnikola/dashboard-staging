@@ -2,12 +2,33 @@ import { useState } from 'react'
 import { sb } from '../../lib/supabase'
 
 export default function SetPassword({ onComplete }) {
+  const [fullName, setFullName] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const inputStyle = {
+    width: '100%', padding: '11px 14px', border: '1px solid var(--color-border)',
+    borderRadius: 8, fontSize: 14, fontFamily: 'var(--font-body)', marginBottom: 10,
+    outline: 'none', transition: 'border-color 0.2s, box-shadow 0.2s'
+  }
+
+  const handleFocus = (e) => {
+    e.target.style.borderColor = 'var(--color-accent)'
+    e.target.style.boxShadow = '0 0 0 3px rgba(67,56,202,0.08)'
+  }
+  const handleBlur = (e) => {
+    e.target.style.borderColor = 'var(--color-border)'
+    e.target.style.boxShadow = 'none'
+  }
+
   const handleSubmit = async () => {
+    const trimmedName = fullName.trim()
+    if (!trimmedName) {
+      setError('Unesi korisničko ime')
+      return
+    }
     if (!password || !confirm) {
       setError('Unesi šifru u oba polja')
       return
@@ -24,11 +45,38 @@ export default function SetPassword({ onComplete }) {
     setError('')
     setLoading(true)
     try {
-      const { error: updateError } = await sb.auth.updateUser({ password })
-      if (updateError) throw updateError
+      // Check if username already exists
+      const { data: existing } = await sb
+        .from('user_profiles')
+        .select('id')
+        .eq('full_name', trimmedName)
+
+      if (existing && existing.length > 0) {
+        // Check it's not the current user's own profile
+        const { data: { user } } = await sb.auth.getUser()
+        const isOwnProfile = existing.some(p => p.id === user?.id)
+        if (!isOwnProfile) {
+          setError('Ovo korisničko ime je već zauzeto')
+          setLoading(false)
+          return
+        }
+      }
+
+      // Update password
+      const { error: pwError } = await sb.auth.updateUser({ password })
+      if (pwError) throw pwError
+
+      // Update full_name in user_profiles
+      const { data: { user } } = await sb.auth.getUser()
+      if (user) {
+        await sb.from('user_profiles')
+          .update({ full_name: trimmedName })
+          .eq('id', user.id)
+      }
+
       onComplete()
     } catch (err) {
-      setError(err.message || 'Greška pri postavljanju šifre')
+      setError(err.message || 'Greška pri registraciji')
     } finally {
       setLoading(false)
     }
@@ -53,32 +101,32 @@ export default function SetPassword({ onComplete }) {
           Performance <span style={{ color: 'var(--color-accent)' }}>Dashboard</span>
         </h2>
         <p style={{ fontFamily: 'var(--font-body)', fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 28 }}>
-          Postavi svoju lozinku za pristup
+          Postavite korisničko ime i lozinku
         </p>
         <input
-          type="password" value={password} onChange={e => setPassword(e.target.value)}
+          type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+          placeholder="Korisničko ime"
+          onKeyDown={e => e.key === 'Enter' && document.getElementById('newPw')?.focus()}
+          style={inputStyle}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          autoFocus
+        />
+        <input
+          id="newPw" type="password" value={password} onChange={e => setPassword(e.target.value)}
           placeholder="Nova šifra"
           onKeyDown={e => e.key === 'Enter' && document.getElementById('confirmPw')?.focus()}
-          style={{
-            width: '100%', padding: '11px 14px', border: '1px solid var(--color-border)',
-            borderRadius: 8, fontSize: 14, fontFamily: 'var(--font-body)', marginBottom: 10,
-            outline: 'none', transition: 'border-color 0.2s, box-shadow 0.2s'
-          }}
-          onFocus={e => { e.target.style.borderColor = 'var(--color-accent)'; e.target.style.boxShadow = '0 0 0 3px rgba(67,56,202,0.08)' }}
-          onBlur={e => { e.target.style.borderColor = 'var(--color-border)'; e.target.style.boxShadow = 'none' }}
-          autoFocus
+          style={inputStyle}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
         />
         <input
           id="confirmPw" type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
           placeholder="Potvrdi šifru"
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          style={{
-            width: '100%', padding: '11px 14px', border: '1px solid var(--color-border)',
-            borderRadius: 8, fontSize: 14, fontFamily: 'var(--font-body)', marginBottom: 14,
-            outline: 'none', transition: 'border-color 0.2s, box-shadow 0.2s'
-          }}
-          onFocus={e => { e.target.style.borderColor = 'var(--color-accent)'; e.target.style.boxShadow = '0 0 0 3px rgba(67,56,202,0.08)' }}
-          onBlur={e => { e.target.style.borderColor = 'var(--color-border)'; e.target.style.boxShadow = 'none' }}
+          style={{ ...inputStyle, marginBottom: 14 }}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
         />
         {error && <div style={{ color: 'var(--color-red)', fontSize: 12, marginBottom: 12 }}>{error}</div>}
         <button
@@ -87,7 +135,7 @@ export default function SetPassword({ onComplete }) {
           className="btn btn-primary"
           style={{ width: '100%', justifyContent: 'center', padding: 11, opacity: loading ? 0.7 : 1 }}
         >
-          {loading ? 'Čuvanje...' : 'Postavi šifru'}
+          {loading ? 'Čuvanje...' : 'Registruj se'}
         </button>
       </div>
     </div>
