@@ -63,10 +63,11 @@ export async function prefetchClientData(clientId) {
       from += pageSize
     }
 
-    const [budgetRes, flightRes, ga4Res] = await Promise.all([
+    const [budgetRes, flightRes, ga4Res, ldRes] = await Promise.all([
       sb.from('budgets').select('*').eq('client_id', clientId),
       sb.from('flight_days').select('*').eq('client_id', clientId),
-      sb.from('ga4_kpi_data').select('*').eq('client_id', clientId)
+      sb.from('ga4_kpi_data').select('*').eq('client_id', clientId),
+      sb.from('local_display_report').select('*').eq('client_id', clientId)
     ])
 
     // Clear old cache for this client, then repopulate
@@ -114,6 +115,23 @@ export async function prefetchClientData(clientId) {
           leads: Number(row.leads) || 0,
           sessions: Number(row.sessions) || 0,
           users: Number(row.users) || 0
+        })
+      })
+    }
+
+    if (ldRes.data) {
+      ldRes.data.forEach(row => {
+        const key = `ld_${clientId}_${row.month}`
+        if (!_cache.localDisplay[key]) _cache.localDisplay[key] = []
+        _cache.localDisplay[key].push({
+          campaign: row.campaign,
+          publisher: row.publisher,
+          format: row.format,
+          type: row.type,
+          impressions: Number(row.impressions) || 0,
+          clicks: Number(row.clicks) || 0,
+          ctr: Number(row.ctr) || 0,
+          actions: Number(row.actions) || 0
         })
       })
     }

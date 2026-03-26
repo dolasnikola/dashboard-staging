@@ -202,6 +202,43 @@ function parseGDNScript(rows) {
   return { campaigns: table1, insertionOrders: table2 }
 }
 
+// ============== LOCAL DISPLAY PARSER ==============
+export function parseLocalDisplayData(rows) {
+  if (!rows || rows.length < 2) return []
+  const header = rows[0].map(h => h.toLowerCase().trim())
+  const colIdx = (name) => header.findIndex(h => h.includes(name))
+
+  const iPublisher = colIdx('publisher')
+  const iFormat = colIdx('format')
+  const iType = colIdx('type')
+  const iImpressions = colIdx('impressions')
+  const iClicks = colIdx('clicks')
+
+  if (iPublisher === -1 || iImpressions === -1 || iClicks === -1) return []
+
+  const data = []
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i]
+    const publisher = (row[iPublisher] || '').trim()
+    if (!publisher || publisher.toLowerCase() === 'total') continue
+
+    let label = publisher
+    if (iFormat !== -1 && row[iFormat]?.trim()) label += ' / ' + row[iFormat].trim()
+    if (iType !== -1 && row[iType]?.trim()) label += ' / ' + row[iType].trim()
+
+    const impressions = cleanNum(row[iImpressions])
+    const clicks = cleanNum(row[iClicks])
+    data.push({
+      campaign: label,
+      impressions,
+      clicks,
+      ctr: impressions > 0 ? clicks / impressions * 100 : 0,
+      spend: 0
+    })
+  }
+  return data
+}
+
 // ============== TOTALS HELPER ==============
 export function sumTotals(items) {
   const t = { impressions: 0, clicks: 0, spend: 0, reach: 0 }
@@ -235,6 +272,7 @@ export function pdfWriteText(doc, text, x, y, cw, fontSize, fontStyle, lineH) {
 }
 
 const TABLE_COL_WIDTHS = {
+  4: { 0: { cellWidth: 120 }, 1: { cellWidth: 50 }, 2: { cellWidth: 40 }, 3: { cellWidth: 35 } },
   5: { 0: { cellWidth: 105 }, 1: { cellWidth: 38 }, 2: { cellWidth: 32 }, 3: { cellWidth: 28 }, 4: { cellWidth: 38 } },
   6: { 0: { cellWidth: 85 }, 1: { cellWidth: 35 }, 2: { cellWidth: 35 }, 3: { cellWidth: 30 }, 4: { cellWidth: 28 }, 5: { cellWidth: 35 } }
 }

@@ -8,8 +8,8 @@ export const NLB_PRODUCTS = {
   'agro':     { label: 'Agro krediti', color: '#8b5cf6' }
 }
 
-export const PLATFORM_NAMES = { google_ads: 'Google Ads', meta: 'Meta', dv360: 'DV360', tiktok: 'TikTok', ga4: 'GA4' }
-export const PLATFORM_BADGE = { google_ads: 'badge-google', meta: 'badge-meta', dv360: 'badge-dv360', tiktok: 'badge-tiktok', ga4: 'badge-ga4' }
+export const PLATFORM_NAMES = { google_ads: 'Google Ads', meta: 'Meta', dv360: 'DV360', tiktok: 'TikTok', ga4: 'GA4', local_display: 'Local Display' }
+export const PLATFORM_BADGE = { google_ads: 'badge-google', meta: 'badge-meta', dv360: 'badge-dv360', tiktok: 'badge-tiktok', ga4: 'badge-ga4', local_display: 'badge-local' }
 
 export const METRIC_LABELS = {
   impressions: 'Impressions', reach: 'Reach', cpm: 'CPM', ctr: 'CTR',

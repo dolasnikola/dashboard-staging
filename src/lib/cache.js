@@ -11,6 +11,7 @@ export const _cache = {
   budgets: {},        // key: `budget_${clientId}_${platform}_${month}` → amount
   flightDays: {},     // key: `flight_${clientId}_${month}` → days[]
   ga4Data: {},        // key: `ga4_${clientId}_${month}` → rows[]
+  localDisplay: {},   // key: `ld_${clientId}_${month}` → rows[]
   sheetLinks: null,   // key → url
   homepageSummary: {},// key: `${clientId}_${platform}_${month}` → {spend,impressions,clicks,conversions}
   _prefetched: {},    // clientId → timestamp (ms) of last prefetch
@@ -50,6 +51,9 @@ export function clearClientCache(clientId) {
   })
   Object.keys(_cache.ga4Data).forEach(k => {
     if (k.startsWith(`ga4_${clientId}_`)) delete _cache.ga4Data[k]
+  })
+  Object.keys(_cache.localDisplay).forEach(k => {
+    if (k.startsWith(`ld_${clientId}_`)) delete _cache.localDisplay[k]
   })
   delete _cache._prefetched[clientId]
   _cache._accessOrder = _cache._accessOrder.filter(id => id !== clientId)
@@ -98,6 +102,19 @@ export function dbGetAllCampaignDataForPlatform(clientId, platform) {
   return allRows
 }
 
+export function dbGetLocalDisplay(clientId, month) {
+  return _cache.localDisplay[`ld_${clientId}_${month}`] || []
+}
+
+export function dbGetAllLocalDisplay(clientId) {
+  const prefix = `ld_${clientId}_`
+  let allRows = []
+  Object.entries(_cache.localDisplay).forEach(([key, rows]) => {
+    if (key.startsWith(prefix)) allRows = allRows.concat(rows)
+  })
+  return allRows
+}
+
 export function getHomepageSummary(clientId, platform, month) {
   const key = `${clientId}_${platform}_${month}`
   return _cache.homepageSummary[key] || { spend: 0, impressions: 0, clicks: 0, conversions: 0 }
@@ -113,6 +130,7 @@ export function clearCache() {
   _cache.budgets = {}
   _cache.flightDays = {}
   _cache.ga4Data = {}
+  _cache.localDisplay = {}
   _cache.sheetLinks = null
   _cache.homepageSummary = {}
   _cache._prefetched = {}

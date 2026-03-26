@@ -8,6 +8,7 @@ import PlatformTabs from './PlatformTabs'
 import OverviewTab from './OverviewTab'
 import PlatformView from './PlatformView'
 import GA4View from './GA4View'
+import LocalDisplayView from './LocalDisplayView'
 import { PLATFORM_NAMES, PLATFORM_BADGE } from '../../lib/data'
 
 export default function ClientDetail() {
@@ -107,6 +108,8 @@ export default function ClientDetail() {
 
           {activePlatform === 'overview' ? (
             <OverviewTab clientId={clientId} client={client} />
+          ) : activePlatform === 'local_display' ? (
+            <LocalDisplayView clientId={clientId} />
           ) : client.setup[activePlatform]?.type === 'ga4_kpi' ? (
             <GA4View clientId={clientId} />
           ) : (

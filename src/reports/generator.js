@@ -5,7 +5,7 @@ import { useAppStore } from '../stores/appStore'
 import { sb } from '../lib/supabase'
 import {
   toAscii, fmtNum, fmtEur, fmtTableVal, getReportMonth, getMonthLabelCapital, getMonthNameEn,
-  fetchCSV, parseSearchData, parseMetaData, parseGDNData, sumTotals,
+  fetchCSV, parseSearchData, parseMetaData, parseGDNData, parseLocalDisplayData, sumTotals,
   pdfDrawBg, pdfRenderTable, preloadCreatives, getCreativeBase64, getImgFormat,
   REPORT_COL_LABELS
 } from './pdf-utils'
@@ -57,6 +57,12 @@ async function collectReportData(config) {
     const data = parseGDNData(rows, config.gdn_campaign_filter)
     const totalSource = data.insertionOrders.length > 0 ? data.insertionOrders : data.campaigns
     platforms.dv360 = { campaigns: data.campaigns, insertionOrders: data.insertionOrders, totals: sumTotals(totalSource) }
+  }
+
+  if (urls.local_display) {
+    const rows = await fetchCSV(urls.local_display)
+    const data = parseLocalDisplayData(rows)
+    platforms.local_display = { campaigns: data, totals: sumTotals(data) }
   }
 
   return {
@@ -122,18 +128,34 @@ function generatePlatformNarrative(platform, data, reportData) {
 // ============== AI NARRATIVES ==============
 async function fetchAINarratives(reportData) {
   const workerUrl = reportData.config.ai_worker_url
-  if (!workerUrl) return null
+  if (!workerUrl) { console.warn('[AI] No worker URL configured, skipping AI'); return null }
 
   const cacheKey = `reportNarrative_${reportData.clientId}_${reportData.reportMonth}`
+  const platformKeys = Object.keys(reportData.platforms)
+
+  // Check localStorage cache — validate it has executiveSummary + at least one platform key
   try {
     const cached = localStorage.getItem(cacheKey)
     if (cached) {
       const parsed = JSON.parse(cached)
-      if (parsed.executiveSummary) return parsed
+      const hasAllKeys = parsed.executiveSummary && parsed.executiveSummary.length > 20 &&
+        platformKeys.some(k => parsed[k] && parsed[k].length > 20)
+      if (hasAllKeys) {
+        console.log('[AI] Using cached narratives from localStorage')
+        return parsed
+      } else {
+        console.warn('[AI] Cached narratives incomplete, removing cache')
+        localStorage.removeItem(cacheKey)
+      }
     }
   } catch (e) { localStorage.removeItem(cacheKey) }
 
+  // Fetch from AI worker with 20s timeout
   try {
+    console.log('[AI] Calling worker:', workerUrl)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 20000)
+
     const payload = {
       clientId: reportData.clientId,
       clientName: reportData.client?.name || reportData.clientId,
@@ -154,14 +176,26 @@ async function fetchAINarratives(reportData) {
     const response = await fetch(workerUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     })
-    if (!response.ok) return null
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => 'no body')
+      console.warn(`[AI] Worker error ${response.status}:`, errBody)
+      return null
+    }
     const data = await response.json()
+    console.log('[AI] Narratives received successfully')
     try { localStorage.setItem(cacheKey, JSON.stringify(data.narratives)) } catch(e) {}
     return data.narratives
   } catch (err) {
-    console.error('Failed to fetch AI narratives:', err)
+    if (err.name === 'AbortError') {
+      console.warn('[AI] Worker request timed out after 20s')
+    } else {
+      console.error('[AI] Failed to fetch narratives:', err)
+    }
     return null
   }
 }
@@ -242,9 +276,15 @@ export async function generateReport(clientId, onNotify, onProgress) {
       } else {
         doc.setFont('times', 'normal')
         doc.setFontSize(11)
-        doc.text(line, margin, y, { align: 'justify', maxWidth: cw })
         const wrapped = doc.splitTextToSize(line, cw)
-        y += wrapped.length * 5.5
+        wrapped.forEach((wl, idx) => {
+          if (idx < wrapped.length - 1) {
+            doc.text(wl, margin, y, { align: 'justify', maxWidth: cw })
+          } else {
+            doc.text(wl, margin, y)
+          }
+          y += 5.5
+        })
       }
     })
 
@@ -343,8 +383,16 @@ export async function generateReport(clientId, onNotify, onProgress) {
         doc.setTextColor(30, 30, 30)
         const wrapped = doc.splitTextToSize(line, cw)
         if (y + wrapped.length * 4.5 > ph - 5) { doc.addPage(); pdfDrawBg(doc, pw, ph); y = margin }
-        doc.text(line, margin, y, { align: 'justify', maxWidth: cw })
-        y += wrapped.length * 4.5 + 1
+        wrapped.forEach((wl, idx) => {
+          if (y + 4.5 > ph - 5) { doc.addPage(); pdfDrawBg(doc, pw, ph); y = margin }
+          if (idx < wrapped.length - 1) {
+            doc.text(wl, margin, y, { align: 'justify', maxWidth: cw })
+          } else {
+            doc.text(wl, margin, y)
+          }
+          y += 4.5
+        })
+        y += 1
       })
 
       // Creatives (skip dv360, shown on summary page)
