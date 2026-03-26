@@ -14,7 +14,7 @@ export default function BudgetOverview({ clientId, client }) {
       gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
       gap: 16, marginBottom: 24
     }}>
-      {client.platforms.map(p => {
+      {client.platforms.filter(p => p !== 'ga4' && p !== 'local_display').map(p => {
         const budget = dbGetBudget(clientId, p, month)
         const rows = getFilteredData(clientId, p, activeDateRange, customDateFrom, customDateTo)
         const spent = rows.reduce((s, r) => s + (r.spend || 0), 0)

@@ -12,7 +12,7 @@ export default function BudgetModal({ onClose }) {
   useEffect(() => {
     const v = {}
     Object.entries(clients).forEach(([id, client]) => {
-      client.platforms.forEach(p => {
+      client.platforms.filter(p => p !== 'ga4' && p !== 'local_display').forEach(p => {
         v[`${id}_${p}`] = dbGetBudget(id, p, month) || ''
       })
     })
@@ -47,7 +47,7 @@ export default function BudgetModal({ onClose }) {
         {Object.entries(clients).map(([id, client]) => (
           <div key={id}>
             <div style={{ marginTop: 16, fontWeight: 600, fontSize: 14 }}>{client.name} ({client.currency})</div>
-            {client.platforms.map(p => {
+            {client.platforms.filter(p => p !== 'ga4' && p !== 'local_display').map(p => {
               const key = `${id}_${p}`
               return (
                 <div key={key} style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'end' }}>
