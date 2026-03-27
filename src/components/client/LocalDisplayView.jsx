@@ -1,32 +1,38 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { Line } from 'react-chartjs-2'
+import { useAppStore } from '../../stores/appStore'
 import { dbGetAllLocalDisplay, dbGetAllLocalDisplayDaily } from '../../lib/cache'
+import { getDateRangeBounds } from '../../lib/utils'
 import { fmt } from '../../lib/data'
 
 export default function LocalDisplayView({ clientId }) {
+  const { activeDateRange, customDateFrom, customDateTo } = useAppStore()
   const monthlyRows = dbGetAllLocalDisplay(clientId)
   const dailyRows = dbGetAllLocalDisplayDaily(clientId)
   const hasDailyData = dailyRows.length > 0
 
-  // Use daily data if available, otherwise fall back to monthly report data
-  const allRows = hasDailyData ? dailyRows : monthlyRows
-
-  // Get available months
-  const months = useMemo(() => {
-    const set = new Set(allRows.map(r => r.month))
-    return [...set].sort().reverse()
-  }, [allRows])
-
-  const [selectedMonth, setSelectedMonth] = useState(months[0] || '')
-
-  const monthData = useMemo(() => {
-    return allRows.filter(r => r.month === selectedMonth)
-  }, [allRows, selectedMonth])
+  // Filter data by global date range
+  const filteredData = useMemo(() => {
+    if (hasDailyData) {
+      const bounds = getDateRangeBounds(activeDateRange, customDateFrom, customDateTo)
+      const fromStr = bounds.from.toISOString().slice(0, 10)
+      const toStr = bounds.to.toISOString().slice(0, 10)
+      return dailyRows.filter(r => r.date >= fromStr && r.date <= toStr)
+    }
+    // Monthly fallback: filter by months in range
+    const bounds = getDateRangeBounds(activeDateRange, customDateFrom, customDateTo)
+    if (bounds.allMonths) return monthlyRows
+    if (bounds.month) return monthlyRows.filter(r => r.month === bounds.month)
+    // Multi-month range: compute months
+    const fromMonth = bounds.from.toISOString().slice(0, 7)
+    const toMonth = bounds.to.toISOString().slice(0, 7)
+    return monthlyRows.filter(r => r.month >= fromMonth && r.month <= toMonth)
+  }, [hasDailyData, dailyRows, monthlyRows, activeDateRange, customDateFrom, customDateTo])
 
   // Aggregate by publisher
   const byPublisher = useMemo(() => {
     const map = {}
-    monthData.forEach(r => {
+    filteredData.forEach(r => {
       if (!map[r.publisher]) map[r.publisher] = { impressions: 0, clicks: 0, actions: 0 }
       map[r.publisher].impressions += r.impressions
       map[r.publisher].clicks += r.clicks
@@ -36,25 +42,25 @@ export default function LocalDisplayView({ clientId }) {
       v.ctr = v.impressions > 0 ? (v.clicks / v.impressions * 100) : 0
     })
     return Object.entries(map).sort((a, b) => b[1].impressions - a[1].impressions)
-  }, [monthData])
+  }, [filteredData])
 
   // Totals
   const totals = useMemo(() => {
     const t = { impressions: 0, clicks: 0, actions: 0 }
-    monthData.forEach(r => {
+    filteredData.forEach(r => {
       t.impressions += r.impressions
       t.clicks += r.clicks
       t.actions += r.actions
     })
     t.ctr = t.impressions > 0 ? (t.clicks / t.impressions * 100) : 0
     return t
-  }, [monthData])
+  }, [filteredData])
 
   // Daily trend data (only for daily data)
   const dailyTrend = useMemo(() => {
     if (!hasDailyData) return null
     const byDay = {}
-    monthData.forEach(r => {
+    filteredData.forEach(r => {
       if (!r.date) return
       if (!byDay[r.date]) byDay[r.date] = { impressions: 0, clicks: 0 }
       byDay[r.date].impressions += r.impressions
@@ -70,9 +76,9 @@ export default function LocalDisplayView({ clientId }) {
       impressions: sorted.map(([, v]) => v.impressions),
       clicks: sorted.map(([, v]) => v.clicks)
     }
-  }, [monthData, hasDailyData])
+  }, [filteredData, hasDailyData])
 
-  const hasData = monthData.length > 0
+  const hasData = filteredData.length > 0
 
   return (
     <div>
@@ -83,19 +89,6 @@ export default function LocalDisplayView({ clientId }) {
             Dnevni podaci (gDE API)
           </span>
         )}
-        <select
-          value={selectedMonth}
-          onChange={e => setSelectedMonth(e.target.value)}
-          style={{ padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 13 }}
-        >
-          {months.length > 0 ? months.map(val => {
-            if (!val) return null
-            const parts = val.split('-')
-            const y = Number(parts[0]), m = Number(parts[1])
-            const label = new Date(y, m - 1).toLocaleDateString('sr-Latn', { year: 'numeric', month: 'long' })
-            return <option key={val} value={val}>{label}</option>
-          }) : <option value="">Nema podataka</option>}
-        </select>
       </div>
 
       {hasData ? (
@@ -210,10 +203,7 @@ export default function LocalDisplayView({ clientId }) {
                 </tr>
               </thead>
               <tbody>
-                {(hasDailyData
-                  ? aggregateDailyByPlacement(monthData)
-                  : monthData
-                )
+                {aggregateDailyByPlacement(filteredData)
                   .sort((a, b) => b.impressions - a.impressions)
                   .map((r, i) => (
                     <tr key={i}>
@@ -235,7 +225,7 @@ export default function LocalDisplayView({ clientId }) {
           padding: 40, textAlign: 'center', color: 'var(--color-text-secondary)',
           background: 'var(--color-card)', borderRadius: 12, border: '1px solid var(--color-border)'
         }}>
-          Nema Local Display podataka za izabrani mesec.
+          Nema Local Display podataka za izabrani period.
           <br /><small style={{ marginTop: 8, display: 'block' }}>Podaci se sinhronizuju dnevno iz Gemius gDE API-ja.</small>
         </div>
       )}
@@ -244,7 +234,7 @@ export default function LocalDisplayView({ clientId }) {
 }
 
 /**
- * Aggregate daily rows into placement-level summary for the detail table.
+ * Aggregate rows into placement-level summary for the detail table.
  * Groups by campaign+publisher+format+type.
  */
 function aggregateDailyByPlacement(rows) {
