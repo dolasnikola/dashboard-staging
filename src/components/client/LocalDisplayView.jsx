@@ -1,9 +1,15 @@
 import { useState, useMemo } from 'react'
-import { dbGetAllLocalDisplay } from '../../lib/cache'
+import { Line } from 'react-chartjs-2'
+import { dbGetAllLocalDisplay, dbGetAllLocalDisplayDaily } from '../../lib/cache'
 import { fmt } from '../../lib/data'
 
 export default function LocalDisplayView({ clientId }) {
-  const allRows = dbGetAllLocalDisplay(clientId)
+  const monthlyRows = dbGetAllLocalDisplay(clientId)
+  const dailyRows = dbGetAllLocalDisplayDaily(clientId)
+  const hasDailyData = dailyRows.length > 0
+
+  // Use daily data if available, otherwise fall back to monthly report data
+  const allRows = hasDailyData ? dailyRows : monthlyRows
 
   // Get available months
   const months = useMemo(() => {
@@ -26,7 +32,6 @@ export default function LocalDisplayView({ clientId }) {
       map[r.publisher].clicks += r.clicks
       map[r.publisher].actions += r.actions
     })
-    // Compute CTR per publisher
     Object.values(map).forEach(v => {
       v.ctr = v.impressions > 0 ? (v.clicks / v.impressions * 100) : 0
     })
@@ -45,12 +50,39 @@ export default function LocalDisplayView({ clientId }) {
     return t
   }, [monthData])
 
+  // Daily trend data (only for daily data)
+  const dailyTrend = useMemo(() => {
+    if (!hasDailyData) return null
+    const byDay = {}
+    monthData.forEach(r => {
+      if (!r.date) return
+      if (!byDay[r.date]) byDay[r.date] = { impressions: 0, clicks: 0 }
+      byDay[r.date].impressions += r.impressions
+      byDay[r.date].clicks += r.clicks
+    })
+    const sorted = Object.entries(byDay).sort((a, b) => a[0].localeCompare(b[0]))
+    if (sorted.length < 2) return null
+    return {
+      labels: sorted.map(([d]) => {
+        const dt = new Date(d + 'T00:00:00')
+        return dt.toLocaleDateString('sr-Latn', { day: 'numeric', month: 'short' })
+      }),
+      impressions: sorted.map(([, v]) => v.impressions),
+      clicks: sorted.map(([, v]) => v.clicks)
+    }
+  }, [monthData, hasDailyData])
+
   const hasData = monthData.length > 0
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <span className="campaign-type" style={{ background: '#fef3c7', color: '#b45309' }}>Local Display</span>
+        {hasDailyData && (
+          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', background: 'var(--color-bg-subtle)', padding: '3px 8px', borderRadius: 6 }}>
+            Dnevni podaci (gDE API)
+          </span>
+        )}
         <select
           value={selectedMonth}
           onChange={e => setSelectedMonth(e.target.value)}
@@ -84,6 +116,53 @@ export default function LocalDisplayView({ clientId }) {
               </div>
             ))}
           </div>
+
+          {/* Daily trend chart (only when daily data exists) */}
+          {dailyTrend && (
+            <div style={{
+              background: 'var(--color-card)', borderRadius: 12, padding: 20,
+              border: '1px solid var(--color-border)', marginBottom: 24
+            }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, marginTop: 0 }}>Dnevni trend</h3>
+              <div style={{ height: 220 }}>
+                <Line
+                  data={{
+                    labels: dailyTrend.labels,
+                    datasets: [
+                      {
+                        label: 'Impressions',
+                        data: dailyTrend.impressions,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59,130,246,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y'
+                      },
+                      {
+                        label: 'Clicks',
+                        data: dailyTrend.clicks,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16,185,129,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        yAxisID: 'y1'
+                      }
+                    ]
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { position: 'top', labels: { usePointStyle: true, pointStyle: 'circle' } } },
+                    scales: {
+                      y: { type: 'linear', position: 'left', title: { display: true, text: 'Impressions' }, grid: { color: 'rgba(0,0,0,0.06)' } },
+                      y1: { type: 'linear', position: 'right', title: { display: true, text: 'Clicks' }, grid: { drawOnChartArea: false } }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Publisher table */}
           <div className="data-table-wrap">
@@ -131,7 +210,10 @@ export default function LocalDisplayView({ clientId }) {
                 </tr>
               </thead>
               <tbody>
-                {monthData
+                {(hasDailyData
+                  ? aggregateDailyByPlacement(monthData)
+                  : monthData
+                )
                   .sort((a, b) => b.impressions - a.impressions)
                   .map((r, i) => (
                     <tr key={i}>
@@ -154,9 +236,30 @@ export default function LocalDisplayView({ clientId }) {
           background: 'var(--color-card)', borderRadius: 12, border: '1px solid var(--color-border)'
         }}>
           Nema Local Display podataka za izabrani mesec.
-          <br /><small style={{ marginTop: 8, display: 'block' }}>Podaci se unose mesečno iz Gemius izveštaja.</small>
+          <br /><small style={{ marginTop: 8, display: 'block' }}>Podaci se sinhronizuju dnevno iz Gemius gDE API-ja.</small>
         </div>
       )}
     </div>
   )
+}
+
+/**
+ * Aggregate daily rows into placement-level summary for the detail table.
+ * Groups by campaign+publisher+format+type.
+ */
+function aggregateDailyByPlacement(rows) {
+  const map = {}
+  rows.forEach(r => {
+    const key = `${r.campaign}|${r.publisher}|${r.format}|${r.type}`
+    if (!map[key]) {
+      map[key] = { campaign: r.campaign, publisher: r.publisher, format: r.format, type: r.type, impressions: 0, clicks: 0, actions: 0 }
+    }
+    map[key].impressions += r.impressions
+    map[key].clicks += r.clicks
+    map[key].actions += r.actions
+  })
+  return Object.values(map).map(r => ({
+    ...r,
+    ctr: r.impressions > 0 ? (r.clicks / r.impressions * 100) : 0
+  }))
 }

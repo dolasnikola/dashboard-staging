@@ -119,8 +119,11 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 | `user_profiles` | Extends Supabase Auth with role + full_name |
 | `user_client_access` | Maps users → clients for account_manager/viewer roles |
 | `sheet_links` | Google Sheets CSV URLs per client/platform |
+| `local_display_report` | Gemius Local Display metrics per placement/month |
 | `report_configs` | Per-client report configuration (FAZA 4B): platform_labels, metric_cols, sheet_urls, creatives_config, ai_worker_url, ai_prompt_context, gdn_campaign_filter, schedule |
 | `report_history` | Generated report log: client_id, report_month, pdf_url, status |
+| `gemius_config` | Maps dashboard clients to gDE API campaign IDs for automated sync |
+| `local_display_dashboard` | Daily Local Display metrics from Gemius gDE API, per placement |
 
 ## Supabase Setup
 - **Project:** Media House (vorffefuboftlcwteucu.supabase.co)
@@ -213,4 +216,118 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - **FAZA 4B (DONE):** Generic report engine — config-driven PDF reports, no custom JS per client. Generic AI narrative worker. Deployed 2026-03-24.
 - **FAZA 4C (DONE):** Scaling for 50+ clients — DB indexes, server-side aggregation via `get_homepage_summary()` RPC, React memoization (useMemo/React.memo), sync parallelization (batch of 5), table virtualization (@tanstack/react-virtual), code splitting (jsPDF lazy loaded), cache TTL (5min) + LRU eviction (max 5 clients). Deployed 2026-03-25.
 - **FAZA 4D:** AI insights & alerts (anomaly detection, budget pacing)
-- **FAZA 4E:** Direct API integrations (when Google Sheets becomes bottleneck)
+- **FAZA 4E (DONE):** Local Display pipeline — Gemius gDE API direct integration via Edge Function `sync-gemius`. Daily sync replaces monthly email pipeline. Apps Script kept as fallback. Deployed 2026-03-27. TikTok pending credentials.
+
+## FAZA 4E: Local Display Integration (Deployed 2026-03-27)
+
+### Architecture (Current — gDE API)
+```
+pg_cron (3x daily) → Edge Function "sync-gemius" → gDE API → Supabase → Dashboard
+```
+**Direct API integration replaces email pipeline.** Daily sync instead of monthly.
+
+### Architecture (Legacy — Apps Script fallback)
+```
+Gemius XLSX → Gmail → Apps Script → Supabase REST API (service_role) → Dashboard
+```
+
+### Two-Table Design
+| Table | Purpose | Source |
+|-------|---------|--------|
+| `local_display_dashboard` | Daily placement-level data → Dashboard tab + trend chart | ✅ gDE API (Edge Function) |
+| `local_display_report` | Monthly aggregated data → PDF reports | ✅ Auto-rollup from daily data (RPC) |
+
+### Database (`local_display_dashboard` — daily)
+- **Columns:** client_id, campaign, publisher, format, type, date, month, impressions, clicks, ctr, actions, spend
+- **RLS:** SELECT via `has_client_access(client_id)`
+- **UNIQUE constraint:** `(client_id, campaign, publisher, format, type, date)`
+- **Upsert:** Atomic DELETE+INSERT via `upsert_local_display_daily` RPC
+- **Rollup:** `rollup_local_display_monthly` RPC aggregates daily → `local_display_report`
+
+### Database (`local_display_report` — monthly)
+- **Columns:** client_id, campaign, publisher, format, type, month, impressions, clicks, ctr, actions
+- **RLS:** SELECT via `has_client_access(client_id)`, INSERT/DELETE open (service_role bypasses anyway)
+- **UNIQUE constraint:** `(client_id, campaign, publisher, format, type, month)`
+- **Populated by:** rollup RPC (from daily data) OR Apps Script (legacy fallback)
+
+### Apps Script (`scripts/gemius-to-supabase.js`)
+- Searches Gmail for Gemius emails (`from:no-reply@gde.gemius.com`)
+- Detects client from subject keywords via `CLIENT_MAP`
+- Parses XLSX by uploading to Drive as Google Sheet (Drive API v2), reads data, deletes temp file
+- **Header detection:** Scans first 30 rows for row containing both "Placement" AND "Imp" in same row
+- **Placement parsing:** `LD/Blic / 320x100 / Product` → publisher: Blic, format: 320x100, type: Product
+- **Skips:** "Total for" rows (summary rows), rows without valid placement
+- **actions column:** Always empty (Gemius doesn't provide it) — kept for future use
+- Writes to Supabase via REST API with `service_role` key (stored in Script Properties)
+- **Trigger:** Monthly on day 2 at 08:00-09:00
+- **Functions:** `listGemiusEmails` (scout), `inspectHeaders` (debug), `dryRun` (preview), `testImport` / `importGemiusReport` (real import)
+- **Apps Script requirements:** Drive API v2 enabled (Services → Drive API → v2), Script Properties: `SUPABASE_URL`, `SUPABASE_KEY` (service_role)
+
+### Frontend
+- **Component:** `src/components/client/LocalDisplayView.jsx`
+- **Cache:** `_cache.localDisplay` keyed by `ld_${clientId}_${month}`, each row includes `month` field
+- **Cache functions:** `dbGetAllLocalDisplay(clientId)`, `dbGetLocalDisplay(clientId, month)` in `cache.js`
+- **Tab activation:** Add `local_display` to client's `platforms` array in `clients` table
+- **Badge:** Orange (`badge-local` class)
+- **UI:** Month selector + 4 summary cards (Impressions, Clicks, CTR, Actions) + Publisher aggregate table + Placement detail table
+- **Safety:** Handles empty data gracefully (no crash on undefined month)
+
+### Gemius gDE API Integration (FAZA 4E+ — Deployed 2026-03-27)
+
+#### Architecture
+```
+pg_cron → Edge Function (sync-gemius) → gDE API (gdeapi.gemius.com) → Supabase
+```
+**Replaces email pipeline with direct API integration.** Daily sync instead of monthly.
+
+#### gDE API Details
+- **Base URL:** `https://gdeapi.gemius.com/`
+- **Auth:** Session-based — `OpenSession.php` requires **POST** (form-encoded login/passwd → sessionID). All other endpoints use GET.
+- **Response format:** XML
+- **Date format:** `YYYYMMDD` (not ISO, not timestamps)
+- **Key endpoints:** `OpenSession.php` (POST), `GetCampaignsList.php`, `GetBasicStats.php`, `CloseSession.php` (all GET)
+- **GetCampaignsList:** `status` param accepts `current`, `finished`, `waiting` (NOT `all` — must query current+finished separately)
+- **GetBasicStats params:** `dimensionIDs=20` (Placement), `indicatorIDs=4,2,120,1` (impressions,clicks,CTR,actions), `timeDivision=Day`
+- **Placement names** in API match XLSX format exactly: `LD/Publisher / Format / Type [/ tracking]`
+- **CTR** returned as decimal (0.003644), stored as percent (0.36) — multiply by 100
+
+#### Edge Function (`supabase/functions/sync-gemius/`)
+| File | Purpose |
+|------|---------|
+| `index.ts` | Entry point, CORS, timezone check (8:00/9:00 Belgrade), sync_log |
+| `auth.ts` | gDE session management (OpenSession/CloseSession) |
+| `api.ts` | Campaign list + stats fetching, XML parsing |
+| `sync-client.ts` | Per-client sync: API → parse placement → upsert daily + monthly rollup |
+| `types.ts` | TypeScript interfaces |
+
+- **Secrets:** `GEMIUS_USERNAME`, `GEMIUS_PASSWORD` (set via `supabase secrets set`)
+- **Deploy:** `supabase functions deploy sync-gemius --no-verify-jwt` (or via Supabase MCP tool if Docker unavailable)
+- **Manual trigger:** POST to `/functions/v1/sync-gemius` with `{"trigger":"manual"}` or `{"trigger":"manual","client_id":"nlb"}`
+- **Backfill:** POST with `{"trigger":"manual","client_id":"nlb","date_from":"20260101","date_to":"20260327"}` — date format YYYYMMDD
+- **Schedule:** pg_cron 3 slots (5:00, 6:00, 7:00 UTC), same as sync-sheets
+- **Client onboarding:** See `localdisplay.md` for step-by-step instructions
+
+#### Database Tables
+| Table | Purpose |
+|-------|---------|
+| `gemius_config` | Maps client_id → gDE campaign IDs + client name for auto-discovery |
+| `local_display_dashboard` | Daily placement-level metrics from gDE API |
+| `local_display_report` | Monthly aggregated data (populated by rollup RPC from daily data) |
+
+#### Frontend
+- **Component:** `src/components/client/LocalDisplayView.jsx`
+- **Daily data cache:** `_cache.localDisplayDaily` keyed by `ldd_${clientId}_${month}`
+- **New cache functions:** `dbGetAllLocalDisplayDaily(clientId)`, `dbGetLocalDisplayDaily(clientId, month)`
+- **Daily trend chart:** Line chart (impressions + clicks) when daily data exists
+- **Fallback:** Still reads from `local_display_report` (monthly) if no daily data
+
+#### Apps Script Fallback
+- Original email pipeline (`scripts/gemius-to-supabase.js`) kept as fallback
+- Apps Script trigger can be disabled once gDE API sync proves reliable
+
+### Gotchas
+- Gemius XLSX has ~14 rows of headers/titles before actual data — parser finds header row dynamically
+- Campaign names should avoid Serbian diacritics (Š, Ć, Đ, Ž) to prevent encoding issues in CSV/XLSX pipeline
+- `service_role` key in Script Properties — NEVER in frontend code
+- **DV360 has insertion_order field** — UNIQUE constraints must account for it (lesson learned: Preferred Deal vs Open Market are different rows with same campaign+date)
+- **Always SELECT before DELETE/UPDATE** on production data — log what will be affected before executing
