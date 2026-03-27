@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/appStore'
 import { dbGetAllLocalDisplay, dbGetAllLocalDisplayDaily } from '../../lib/cache'
 import { getDateRangeBounds } from '../../lib/utils'
 import { fmt } from '../../lib/data'
+import MetricCard from './MetricCard'
 
 export default function LocalDisplayView({ clientId }) {
   const { activeDateRange, customDateFrom, customDateTo } = useAppStore()
@@ -56,9 +57,9 @@ export default function LocalDisplayView({ clientId }) {
     return t
   }, [filteredData])
 
-  // Daily trend data (only for daily data)
-  const dailyTrend = useMemo(() => {
-    if (!hasDailyData) return null
+  // Daily data for sparklines + trend chart
+  const { dailyTrend, sparklineData } = useMemo(() => {
+    if (!hasDailyData) return { dailyTrend: null, sparklineData: null }
     const byDay = {}
     filteredData.forEach(r => {
       if (!r.date) return
@@ -67,14 +68,26 @@ export default function LocalDisplayView({ clientId }) {
       byDay[r.date].clicks += r.clicks
     })
     const sorted = Object.entries(byDay).sort((a, b) => a[0].localeCompare(b[0]))
-    if (sorted.length < 2) return null
+
+    // Sparkline data (MetricCard format)
+    const sparklineData = sorted.map(([d, v]) => ({
+      _date: d,
+      impressions: v.impressions,
+      clicks: v.clicks,
+      ctr: v.impressions > 0 ? (v.clicks / v.impressions * 100) : 0
+    }))
+
+    if (sorted.length < 2) return { dailyTrend: null, sparklineData }
     return {
-      labels: sorted.map(([d]) => {
-        const dt = new Date(d + 'T00:00:00')
-        return dt.toLocaleDateString('sr-Latn', { day: 'numeric', month: 'short' })
-      }),
-      impressions: sorted.map(([, v]) => v.impressions),
-      clicks: sorted.map(([, v]) => v.clicks)
+      dailyTrend: {
+        labels: sorted.map(([d]) => {
+          const dt = new Date(d + 'T00:00:00')
+          return dt.toLocaleDateString('sr-Latn', { day: 'numeric', month: 'short' })
+        }),
+        impressions: sorted.map(([, v]) => v.impressions),
+        clicks: sorted.map(([, v]) => v.clicks)
+      },
+      sparklineData
     }
   }, [filteredData, hasDailyData])
 
@@ -93,20 +106,17 @@ export default function LocalDisplayView({ clientId }) {
 
       {hasData ? (
         <>
-          {/* Summary cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-            {[
-              { label: 'Impressions', value: fmt(totals.impressions, 'number') },
-              { label: 'Clicks', value: fmt(totals.clicks, 'number') },
-              { label: 'CTR', value: totals.ctr.toFixed(2) + '%' }
-            ].map(card => (
-              <div key={card.label} style={{
-                background: 'var(--color-card)', borderRadius: 12, padding: '20px 24px',
-                border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-default)'
-              }}>
-                <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 6 }}>{card.label}</div>
-                <div style={{ fontSize: 22, fontWeight: 600, fontFamily: 'var(--font-display)' }}>{card.value}</div>
-              </div>
+          {/* Metric cards (same style as other platforms) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+            {['impressions', 'clicks', 'ctr'].map((m, i) => (
+              <MetricCard
+                key={m}
+                metric={m}
+                value={totals[m]}
+                currency="RSD"
+                dailyData={sparklineData}
+                index={i}
+              />
             ))}
           </div>
 
