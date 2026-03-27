@@ -150,54 +150,61 @@ async function fetchAINarratives(reportData) {
     }
   } catch (e) { localStorage.removeItem(cacheKey) }
 
-  // Fetch from AI worker with 20s timeout
-  try {
-    console.log('[AI] Calling worker:', workerUrl)
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 20000)
-
-    const payload = {
-      clientId: reportData.clientId,
-      clientName: reportData.client?.name || reportData.clientId,
-      promptContext: reportData.config.ai_prompt_context || '',
-      reportMonth: reportData.reportMonth,
-      reportData: {
-        monthLabel: reportData.monthLabel,
-        platforms: Object.fromEntries(
-          Object.entries(reportData.platforms).map(([key, val]) => [key, {
-            label: reportData.platformLabels[key] || key,
-            campaigns: val.campaigns,
-            insertionOrders: val.insertionOrders || [],
-            totals: val.totals
-          }])
-        )
-      }
+  // Fetch from AI worker with 55s timeout + 1 retry
+  const payload = {
+    clientId: reportData.clientId,
+    clientName: reportData.client?.name || reportData.clientId,
+    promptContext: reportData.config.ai_prompt_context || '',
+    reportMonth: reportData.reportMonth,
+    reportData: {
+      monthLabel: reportData.monthLabel,
+      platforms: Object.fromEntries(
+        Object.entries(reportData.platforms).map(([key, val]) => [key, {
+          label: reportData.platformLabels[key] || key,
+          campaigns: val.campaigns,
+          insertionOrders: val.insertionOrders || [],
+          totals: val.totals
+        }])
+      )
     }
-    const response = await fetch(workerUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    })
-    clearTimeout(timeoutId)
+  }
 
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => 'no body')
-      console.warn(`[AI] Worker error ${response.status}:`, errBody)
+  const MAX_RETRIES = 1
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`[AI] Calling worker (attempt ${attempt + 1}):`, workerUrl)
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 55000)
+
+      const response = await fetch(workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      })
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => 'no body')
+        console.warn(`[AI] Worker error ${response.status}:`, errBody)
+        if (attempt < MAX_RETRIES) { console.log('[AI] Retrying...'); continue }
+        return null
+      }
+      const data = await response.json()
+      console.log('[AI] Narratives received successfully')
+      try { localStorage.setItem(cacheKey, JSON.stringify(data.narratives)) } catch(e) {}
+      return data.narratives
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.warn(`[AI] Worker request timed out after 55s (attempt ${attempt + 1})`)
+      } else {
+        console.error('[AI] Failed to fetch narratives:', err)
+      }
+      if (attempt < MAX_RETRIES) { console.log('[AI] Retrying...'); continue }
       return null
     }
-    const data = await response.json()
-    console.log('[AI] Narratives received successfully')
-    try { localStorage.setItem(cacheKey, JSON.stringify(data.narratives)) } catch(e) {}
-    return data.narratives
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      console.warn('[AI] Worker request timed out after 20s')
-    } else {
-      console.error('[AI] Failed to fetch narratives:', err)
-    }
-    return null
   }
+  return null
 }
 
 // ============== MAIN GENERATE ==============
@@ -277,12 +284,8 @@ export async function generateReport(clientId, onNotify, onProgress) {
         doc.setFont('times', 'normal')
         doc.setFontSize(11)
         const wrapped = doc.splitTextToSize(line, cw)
-        wrapped.forEach((wl, idx) => {
-          if (idx < wrapped.length - 1) {
-            doc.text(wl, margin, y, { align: 'justify', maxWidth: cw })
-          } else {
-            doc.text(wl, margin, y)
-          }
+        wrapped.forEach(wl => {
+          doc.text(wl, margin, y)
           y += 5.5
         })
       }
@@ -383,13 +386,9 @@ export async function generateReport(clientId, onNotify, onProgress) {
         doc.setTextColor(30, 30, 30)
         const wrapped = doc.splitTextToSize(line, cw)
         if (y + wrapped.length * 4.5 > ph - 5) { doc.addPage(); pdfDrawBg(doc, pw, ph); y = margin }
-        wrapped.forEach((wl, idx) => {
+        wrapped.forEach(wl => {
           if (y + 4.5 > ph - 5) { doc.addPage(); pdfDrawBg(doc, pw, ph); y = margin }
-          if (idx < wrapped.length - 1) {
-            doc.text(wl, margin, y, { align: 'justify', maxWidth: cw })
-          } else {
-            doc.text(wl, margin, y)
-          }
+          doc.text(wl, margin, y)
           y += 4.5
         })
         y += 1
