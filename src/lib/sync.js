@@ -110,35 +110,42 @@ export async function syncAllSheets(onProgress, onNotify) {
 
 export async function syncGA4Sheet(onNotify) {
   const links = getSheetLinks()
-  const url = links['nlb_ga4']
-  if (!url) return
+  // Find all GA4 sheet links (keys ending with _ga4)
+  const ga4Keys = Object.keys(links).filter(k => k.endsWith('_ga4') && links[k])
+  if (ga4Keys.length === 0) return
 
-  try {
-    const csvText = await fetchSheetCSV(url)
-    const { headers, rows } = parseCSV(csvText)
+  for (const key of ga4Keys) {
+    const clientId = key.replace(/_ga4$/, '')
+    const url = links[key]
 
-    const byMonth = {}
-    rows.forEach(row => {
-      const month = row['Month'] || row['month'] || row['Mesec'] || ''
-      if (!month) return
-      if (!byMonth[month]) byMonth[month] = []
-      byMonth[month].push({
-        product: row['Product'] || row['product'] || row['Proizvod'] || '',
-        leads: parseNum(row['Leads'] || row['leads'] || 0),
-        sessions: parseNum(row['Sessions'] || row['sessions'] || 0),
-        users: parseNum(row['Total Users'] || row['Total users'] || row['users'] || row['Users'] || 0)
+    try {
+      const csvText = await fetchSheetCSV(url)
+      const { headers, rows } = parseCSV(csvText)
+
+      const byMonth = {}
+      rows.forEach(row => {
+        const month = row['Month'] || row['month'] || row['Mesec'] || ''
+        if (!month) return
+        if (!byMonth[month]) byMonth[month] = []
+        byMonth[month].push({
+          product: row['Product'] || row['product'] || row['Proizvod'] || '',
+          leads: parseNum(row['Leads'] || row['leads'] || 0),
+          sessions: parseNum(row['Sessions'] || row['sessions'] || 0),
+          users: parseNum(row['Total Users'] || row['Total users'] || row['users'] || row['Users'] || 0)
+        })
       })
-    })
 
-    for (const [month, data] of Object.entries(byMonth)) {
-      await dbSaveGA4Data('nlb', month, data)
+      for (const [month, data] of Object.entries(byMonth)) {
+        await dbSaveGA4Data(clientId, month, data)
+      }
+    } catch (err) {
+      console.error(`[syncGA4Sheet] ${clientId} error:`, err.message || err)
+      if (onNotify) onNotify(`GA4 sync greška (${clientId}): ` + (err.message || err), 'warning')
+      continue
     }
-
-    if (onNotify) onNotify('GA4 podaci sinhronizovani', 'success')
-  } catch (err) {
-    console.error('[syncGA4Sheet] error:', err.message || err)
-    if (onNotify) onNotify('GA4 sync greška: ' + (err.message || err), 'warning')
   }
+
+  if (onNotify) onNotify('GA4 podaci sinhronizovani', 'success')
 }
 
 export async function saveSheetLinks(links) {

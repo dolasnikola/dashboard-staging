@@ -88,7 +88,13 @@ export function detectPlatform(headers) {
 
 export function parseNum(v) {
   if (!v || v === '--' || v === 'N/A') return 0
-  const s = String(v).replace(/[€$%,\s]/g, '').replace(',', '.')
+  let s = String(v).replace(/[€$%\s]/g, '')
+  // Handle European format: 1.234,56 → 1234.56
+  if (s.includes(',') && s.includes('.')) {
+    s = s.replace(/\./g, '').replace(',', '.')
+  } else if (s.includes(',')) {
+    s = s.replace(',', '.')
+  }
   return parseFloat(s) || 0
 }
 

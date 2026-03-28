@@ -37,7 +37,7 @@ const _prefetchInProgress = {}
 
 export async function prefetchClientData(clientId) {
   if (_prefetchInProgress[clientId]) {
-    console.log(`[prefetchClientData] Already in progress for ${clientId}, skipping`)
+    // Already in progress for this client, skip
     return
   }
   // Skip if cache is still fresh (TTL not expired)
@@ -171,10 +171,10 @@ export async function fetchHomepageSummary(month) {
     return
   }
 
-  _cache.homepageSummary = {}
+  const newSummary = {}
   ;(data || []).forEach(row => {
     const key = `${row.client_id}_${row.platform}_${month}`
-    _cache.homepageSummary[key] = {
+    newSummary[key] = {
       spend: row.total_spend || 0,
       impressions: row.total_impressions || 0,
       clicks: row.total_clicks || 0,
@@ -185,20 +185,13 @@ export async function fetchHomepageSummary(month) {
   const { data: budgetData, error: budgetError } = await sb.from('budgets').select('*')
   if (budgetError) console.error('[fetchHomepageSummary] budgets error:', budgetError.message)
 
+  // Only update cache after all queries succeed
+  _cache.homepageSummary = newSummary
   if (budgetData) {
     budgetData.forEach(row => {
       _cache.budgets[`budget_${row.client_id}_${row.platform}_${row.month}`] = Number(row.amount) || 0
     })
   }
-
-  console.log(`[fetchHomepageSummary] Loaded ${(data || []).length} platform summaries, ${budgetData?.length || 0} budgets`)
-}
-
-// Legacy alias — kept for backward compatibility with sync flow
-export async function prefetchHomepageData() {
-  const now = new Date()
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  return fetchHomepageSummary(month)
 }
 
 // ============== CAMPAIGN DATA (write) ==============
@@ -236,7 +229,6 @@ export async function dbSaveCampaignData(clientId, platform, month, rows) {
   const cleanRows = Object.values(deduped)
 
   _cache.campaignData[key] = cleanRows
-  console.log(`[dbSave] ${key}: ${rows.length} raw → ${cleanRows.length} deduped`)
 
   const records = cleanRows.map(r => ({ client_id: clientId, platform, month, ...r }))
 
@@ -286,7 +278,11 @@ export async function dbSaveGA4Data(clientId, month, rows) {
   const key = `ga4_${clientId}_${month}`
   _cache.ga4Data[key] = rows
 
-  await sb.from('ga4_kpi_data').delete().eq('client_id', clientId).eq('month', month)
+  const { error: delError } = await sb.from('ga4_kpi_data').delete().eq('client_id', clientId).eq('month', month)
+  if (delError) {
+    console.error('[dbSaveGA4Data] DELETE error:', delError.message)
+    return
+  }
   if (rows.length > 0) {
     const records = rows.map(r => ({
       client_id: clientId, month,
@@ -338,28 +334,17 @@ export async function dbUpdateClient(clientId, updates) {
 }
 
 export async function dbDeleteClient(clientId) {
-  // Brisanje povezanih podataka prvo (sheet_links, budgets, campaign_data, etc.)
-  await sb.from('sheet_links').delete().eq('client_id', clientId)
-  await sb.from('budgets').delete().eq('client_id', clientId)
-  await sb.from('flight_days').delete().eq('client_id', clientId)
-  await sb.from('ga4_kpi_data').delete().eq('client_id', clientId)
-  await sb.from('campaign_data').delete().eq('client_id', clientId)
-  await sb.from('user_client_access').delete().eq('client_id', clientId)
-  await sb.from('report_history').delete().eq('client_id', clientId)
-  await sb.from('report_configs').delete().eq('client_id', clientId)
+  const relatedTables = ['sheet_links', 'budgets', 'flight_days', 'ga4_kpi_data', 'campaign_data', 'user_client_access', 'report_history', 'report_configs']
+  for (const table of relatedTables) {
+    const { error } = await sb.from(table).delete().eq('client_id', clientId)
+    if (error) { console.error(`[dbDeleteClient] ${table} delete error:`, error.message); return false }
+  }
   const { error } = await sb.from('clients').delete().eq('id', clientId)
   if (error) { console.error('[dbDeleteClient]', error.message); return false }
   return true
 }
 
 // ============== REPORT CONFIG (FAZA 4B) ==============
-
-export async function dbGetReportConfig(clientId) {
-  const { data, error } = await sb.from('report_configs')
-    .select('*').eq('client_id', clientId).eq('is_active', true).limit(1).single()
-  if (error) return null
-  return data
-}
 
 export async function dbGetAllReportConfigs() {
   const { data, error } = await sb.from('report_configs').select('*').eq('is_active', true)

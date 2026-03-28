@@ -50,11 +50,12 @@ export const useAuthStore = create((set, get) => ({
   },
 
   setupAuthListener: () => {
-    sb.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = sb.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         clearCache()
         set({ currentUser: null, currentUserRole: 'viewer', isAuthenticated: false })
       }
     })
+    return () => subscription.unsubscribe()
   }
 }))

@@ -82,7 +82,7 @@ export async function fetchCSV(url) {
 }
 
 export function parseCSVText(text) {
-  const lines = text.split('\n')
+  const lines = text.split(/\r?\n/)
   return lines.map(line => {
     const result = []
     let current = ''
@@ -266,18 +266,6 @@ export function sumTotals(items) {
 export function pdfDrawBg(doc, pw, ph) {
   doc.setFillColor(232, 228, 222)
   doc.rect(0, 0, pw, ph, 'F')
-}
-
-export function pdfWriteText(doc, text, x, y, cw, fontSize, fontStyle, lineH) {
-  doc.setFont('times', fontStyle || 'normal')
-  doc.setFontSize(fontSize || 11)
-  doc.setTextColor(30, 30, 30)
-  const wrapped = doc.splitTextToSize(text, cw)
-  wrapped.forEach(wl => {
-    doc.text(wl, x, y)
-    y += lineH || 5.5
-  })
-  return y
 }
 
 const TABLE_COL_WIDTHS = {

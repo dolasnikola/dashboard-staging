@@ -22,12 +22,6 @@ export async function fetchReportConfig(clientId) {
   return data
 }
 
-export async function fetchAllReportConfigs() {
-  const { data, error } = await sb.from('report_configs').select('*').eq('is_active', true)
-  if (error) { console.error('[fetchAllReportConfigs]', error.message); return [] }
-  return data || []
-}
-
 // ============== DATA COLLECTION ==============
 async function collectReportData(config) {
   const clients = useAppStore.getState().clients

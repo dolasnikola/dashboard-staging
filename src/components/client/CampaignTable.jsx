@@ -22,7 +22,7 @@ export default memo(function CampaignTable({ rows, columns, currency }) {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i}>
+              <tr key={`${r.campaign}_${r.insertion_order || ''}_${i}`}>
                 {columns.map(c => (
                   <td key={c}>
                     {c === 'campaign' ? r.campaign : c === 'insertion_order' ? (r.insertion_order || '') : fmtMetric(c, r[c], currency)}

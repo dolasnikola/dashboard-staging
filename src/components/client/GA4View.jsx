@@ -60,7 +60,7 @@ export default function GA4View({ clientId }) {
               {monthData.map((r, i) => {
                 const isTotal = r.product.startsWith('UKUPNO')
                 return (
-                  <tr key={i} style={isTotal ? { fontWeight: 700, background: 'var(--color-bg-subtle)' } : {}}>
+                  <tr key={`${r.product}_${i}`} style={isTotal ? { fontWeight: 700, background: 'var(--color-bg-subtle)' } : {}}>
                     <td>{r.product}</td>
                     <td>{Number(r.leads).toLocaleString('de-DE')}</td>
                     <td>{Number(r.sessions).toLocaleString('de-DE')}</td>

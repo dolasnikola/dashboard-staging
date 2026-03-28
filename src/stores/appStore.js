@@ -3,6 +3,8 @@ import { fetchClients, fetchHomepageSummary, dbGetSheetLinks } from '../lib/db'
 import { getSheetLinks } from '../lib/cache'
 import { syncAllSheets, syncGA4Sheet } from '../lib/sync'
 
+let _notifyTimer = null
+
 export const useAppStore = create((set, get) => ({
   clients: {},
   activeDateRange: 'this_month',
@@ -36,7 +38,7 @@ export const useAppStore = create((set, get) => ({
       if (Object.keys(links).length > 0) {
         setTimeout(() => syncAllSheets(null, get().notify), 1000)
       }
-      if (links['nlb_ga4']) {
+      if (Object.keys(links).some(k => k.endsWith('_ga4'))) {
         setTimeout(() => syncGA4Sheet(get().notify), 2000)
       }
     } catch (err) {
@@ -54,8 +56,9 @@ export const useAppStore = create((set, get) => ({
   },
 
   notify: (message, type = 'success') => {
+    if (_notifyTimer) clearTimeout(_notifyTimer)
     set({ notification: { message, type } })
-    setTimeout(() => set({ notification: null }), 3000)
+    _notifyTimer = setTimeout(() => { set({ notification: null }); _notifyTimer = null }, 3000)
   },
 
   refreshClients: async () => {

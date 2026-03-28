@@ -23,14 +23,20 @@ export default function ClientDetail() {
 
   useEffect(() => {
     if (!client) return
+    let cancelled = false
     setIsLoading(true)
     prefetchClientData(clientId).then(() => {
+      if (cancelled) return
       setActivePlatform(client.defaultPlatform || client.platforms[0])
       setIsLoading(false)
     })
     // Check if this client has a report config (dynamic import for code splitting)
-    import('../../reports/generator').then(m => m.fetchReportConfig(clientId)).then(config => setHasReportConfig(!!config))
-  }, [clientId, !!client])
+    import('../../reports/generator')
+      .then(m => m.fetchReportConfig(clientId))
+      .then(config => { if (!cancelled) setHasReportConfig(!!config) })
+      .catch(() => { if (!cancelled) setHasReportConfig(false) })
+    return () => { cancelled = true }
+  }, [clientId, !!client]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!client) {
     return (

@@ -27,12 +27,24 @@ Deno.serve(async (req: Request) => {
 
     // Timezone check: only sync at 8:00 or 9:00 Belgrade time (for cron triggers)
     if (trigger === "cron") {
-      const belgradeHour = new Date().toLocaleString("en-US", {
-        timeZone: "Europe/Belgrade",
-        hour: "numeric",
-        hour12: false,
-      });
-      if (!["8", "9"].includes(belgradeHour.trim())) {
+      // Calculate Belgrade hour using reliable UTC offset
+      // CET = UTC+1, CEST = UTC+2 (last Sunday of March to last Sunday of October)
+      const now = new Date();
+      const utcMonth = now.getUTCMonth(); // 0-11
+      const utcDay = now.getUTCDate();
+      const utcDow = now.getUTCDay(); // 0=Sun
+      // Last Sunday of March: day >= 25 && dow === 0, or past it in the month
+      // Last Sunday of October: same logic
+      const marchLastSun = 31 - new Date(now.getUTCFullYear(), 2, 31).getUTCDay();
+      const octLastSun = 31 - new Date(now.getUTCFullYear(), 9, 31).getUTCDay();
+      const isCEST =
+        (utcMonth > 2 && utcMonth < 9) || // Apr-Sep always CEST
+        (utcMonth === 2 && utcDay >= marchLastSun) || // March after last Sunday
+        (utcMonth === 9 && utcDay < octLastSun); // October before last Sunday
+      const offsetHours = isCEST ? 2 : 1;
+      const belgradeHour = (now.getUTCHours() + offsetHours) % 24;
+      console.log(`[sync] Belgrade hour: ${belgradeHour}, UTC hour: ${now.getUTCHours()}, offset: +${offsetHours} (${isCEST ? 'CEST' : 'CET'})`);
+      if (belgradeHour !== 8 && belgradeHour !== 9) {
         return new Response(
           JSON.stringify({
             status: "skipped",

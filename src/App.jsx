@@ -28,14 +28,15 @@ export default function App() {
       setShowSetPassword(true)
     }
     checkSession()
-    setupAuthListener()
-  }, [])
+    const unsubscribe = setupAuthListener()
+    return () => unsubscribe()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isAuthenticated) {
       initDashboard()
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (showSetPassword) {
     return (

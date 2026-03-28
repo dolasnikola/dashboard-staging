@@ -45,10 +45,10 @@ export function clearClientCache(clientId) {
     if (k.startsWith(campaignPrefix)) delete _cache.campaignData[k]
   })
   Object.keys(_cache.budgets).forEach(k => {
-    if (k.includes(`_${clientId}_`)) delete _cache.budgets[k]
+    if (k.startsWith(`budget_${clientId}_`)) delete _cache.budgets[k]
   })
   Object.keys(_cache.flightDays).forEach(k => {
-    if (k.includes(`_${clientId}_`)) delete _cache.flightDays[k]
+    if (k.startsWith(`flight_${clientId}_`)) delete _cache.flightDays[k]
   })
   Object.keys(_cache.ga4Data).forEach(k => {
     if (k.startsWith(`ga4_${clientId}_`)) delete _cache.ga4Data[k]
@@ -86,13 +86,6 @@ export function dbGetGA4Data() {
     result[month] = result[month].concat(rows)
   })
   return result
-}
-
-export function dbGetAllCampaignKeys(clientId, platform) {
-  const prefix = `${clientId}_${platform}_`
-  return Object.keys(_cache.campaignData)
-    .filter(k => k.startsWith(prefix))
-    .map(k => k.replace(prefix, ''))
 }
 
 export function dbGetAllCampaignDataForPlatform(clientId, platform) {
