@@ -3,16 +3,10 @@ import { openSession } from "./auth.ts";
 import { getCampaignsList, getBasicStats } from "./api.ts";
 import type { GemiusConfig, GdeCampaign, LocalDisplayRow, PlacementStats, SyncResult } from "./types.ts";
 
-/**
- * Sync one client's Local Display data from gDE API to Supabase.
- *
- * Flow:
- * 1. Get session → find campaigns for this client
- * 2. GetBasicStats per campaign → daily placement stats
- * 3. Parse placement names → publisher/format/type
- * 4. Upsert into local_display_dashboard (daily)
- * 5. Rollup into local_display_report (monthly)
- */
+// Lookback days: gDE API returns empty results for single-day queries.
+// Use 3-day window to ensure data is returned + catch late-arriving data.
+const LOOKBACK_DAYS = 3;
+
 export async function syncGemiusClient(
   supabase: SupabaseClient,
   config: GemiusConfig,
@@ -54,7 +48,8 @@ export async function syncGemiusClient(
       };
     }
 
-    // Date range: use overrides or default to yesterday
+    // Date range: use overrides or default to lookback window
+    // gDE API returns empty results for single-day queries, so we always use a multi-day range.
     let dateFrom: string;
     let dateTo: string;
     if (options?.dateFrom && options?.dateTo) {
@@ -64,13 +59,15 @@ export async function syncGemiusClient(
       const now = new Date();
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
-      dateFrom = formatDateGde(yesterday);
       dateTo = formatDateGde(yesterday);
+      const lookbackStart = new Date(now);
+      lookbackStart.setDate(lookbackStart.getDate() - LOOKBACK_DAYS);
+      dateFrom = formatDateGde(lookbackStart);
     }
 
-    console.log(`[gemius] ${client_id}: fetching stats for ${dateFrom} (${campaignIds.length} campaigns)`);
+    console.log(`[gemius] ${client_id}: fetching stats for ${dateFrom}-${dateTo} (${campaignIds.length} campaigns)`);
 
-    // Fetch stats for all campaigns at once
+    // Fetch stats for all campaigns
     const stats = await getBasicStats(sessionId, campaignIds, dateFrom, dateTo);
     console.log(`[gemius] ${client_id}: got ${stats.length} placement records`);
 
@@ -162,11 +159,6 @@ export async function syncGemiusClient(
 
 /**
  * Parse Gemius placement string into publisher, format, type.
- * Port of parsePlacement_ from scripts/gemius-to-supabase.js
- *
- * Examples:
- *   "LD/Blic / 320x100 / Product"             → {publisher:"Blic", format:"320x100", type:"Product"}
- *   "LD/Mondo / Incorner / Product / tracking" → {publisher:"Mondo", format:"Incorner", type:"Product"}
  */
 function parsePlacement(placement: string): { publisher: string; format: string; type: string } {
   const result = { publisher: "", format: "", type: "" };
@@ -175,12 +167,10 @@ function parsePlacement(placement: string): { publisher: string; format: string;
 
   if (parts.length >= 2) {
     if (parts[0].toUpperCase() === "LD" && parts.length >= 4) {
-      // "LD / Blic / 320x100 / Product [/ tracking]"
       result.publisher = parts[1].trim();
       result.format = parts[2].trim();
       result.type = parts[3].trim();
     } else if (parts[0].toUpperCase().startsWith("LD")) {
-      // "LD/Blic / 320x100 / Product" — LD and publisher stuck together
       const firstPart = parts[0];
       const slashIdx = firstPart.indexOf("/");
       if (slashIdx >= 0) {
@@ -195,7 +185,6 @@ function parsePlacement(placement: string): { publisher: string; format: string;
     }
   }
 
-  // Remove "tracking" from type if it ended up there
   if (result.type.toLowerCase() === "tracking" && parts.length >= 5) {
     result.type = parts[parts.length - 2].trim();
   }
