@@ -67,7 +67,7 @@ ui/Notification.jsx         — Toast notification from appStore
 ### Reports (`src/reports/`)
 - `generator.js` — Generic report engine (FAZA 4B). Reads config from `report_configs` table, fetches CSV data from configured sheet URLs, generates multi-page PDF with AI narratives via generic Cloudflare Worker. Entry point: `generateReport(clientId)`. Also exports `fetchReportConfig(clientId)`.
 - `pdf-utils.js` — Shared PDF utilities: ASCII transliteration, number/currency formatting, CSV parsing, platform data parsers (Search/Meta/GDN), PDF drawing helpers (background, text, tables), creative image cache. Uses `jspdf-autotable` via `applyPlugin(jsPDF)`.
-- `krka.js` — Thin wrapper for backward compatibility. Calls `generateReport('krka')` from generator.js.
+
 
 ### Static Assets
 - `public/creatives/<client>/` — Ad creative images organized by client and platform
@@ -77,15 +77,28 @@ ui/Notification.jsx         — Toast notification from appStore
 - `worker/wrangler.toml` — Worker config. Secret: `ANTHROPIC_API_KEY` (set via `npx wrangler secret put`)
 
 ### Supabase (`supabase/`)
-- `supabase/functions/sync-sheets/` — FAZA 2 Edge Function for automated data sync
+- `supabase/functions/sync-meta/` — FAZA 4F Edge Function: Meta Marketing API → Supabase direct
+- `supabase/functions/sync-gemius/` — FAZA 4E Edge Function: Gemius gDE API → Supabase direct
+- `supabase/functions/sync-sheets/` — FAZA 2 Edge Function for legacy Google Sheets sync (no active links)
 - `supabase/migrations/` — SQL migrations for sync_log table, RPC functions, pg_cron setup, report engine tables
 
-## Data Flow
+### Apps Scripts (`scripts/`)
+- `googleAds-to-supabase.js` — Consolidated Google Ads → Supabase (replaces 3 per-account scripts). Lookback 3 days for NLB/Urban Garden.
+- `dv360-to-supabase.js` — DV360 Gmail CSV → Supabase. Krka filter (exclude Farma/Pharm/Septolete).
+- `nlb-ga4-to-supabase.js` — GA4 Data API → Supabase. Monthly, NLB products + grouping.
+- `gemius-to-supabase.js` — Gemius email XLSX → Supabase (legacy fallback for sync-gemius).
+- `*-dashboard-*.js`, `*-report-*.js` — Old scripts (write to Sheets). Kept as reference, replaced by *-to-supabase.js versions.
+
+## Data Flow (FAZA 4F — Direct Pipeline, deployed 2026-03-28)
 ```
-Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatform() → mapRow()
-  → dbSaveCampaignData() → [deduplicate → cache update + Supabase DELETE/INSERT]
-  → React components re-read from cache
+Meta:        pg_cron → Edge Function "sync-meta" → Meta Marketing API → Supabase
+Google Ads:  Google Ads Scripts → Apps Script → Supabase REST API (daily + lookback)
+DV360:       Gmail CSV → Apps Script → Supabase REST API (daily)
+GA4:         GA4 Data API → Apps Script → Supabase REST API (monthly)
+Gemius:      pg_cron → Edge Function "sync-gemius" → gDE API → Supabase
 ```
+Google Sheets eliminated from daily pipeline. Monthly report scripts (Krka) still use Sheets.
+Legacy `sync-sheets` Edge Function remains for fallback but has no active sheet_links.
 - On login: `checkSession()` → `authStore.loadProfile()` → `appStore.initDashboard()`:
   - `fetchClients()` from Supabase → populate `clients` in store
   - `fetchHomepageSummary(month)` calls RPC `get_homepage_summary` for aggregated metrics + loads budgets into `_cache`
@@ -122,6 +135,7 @@ Google Sheets (CSV published) → fetchSheetCSV() → parseCSV() → detectPlatf
 | `local_display_report` | Gemius Local Display metrics per placement/month |
 | `report_configs` | Per-client report configuration (FAZA 4B): platform_labels, metric_cols, sheet_urls, creatives_config, ai_worker_url, ai_prompt_context, gdn_campaign_filter, schedule |
 | `report_history` | Generated report log: client_id, report_month, pdf_url, status |
+| `meta_config` | Maps dashboard clients to Meta ad account IDs for automated sync |
 | `gemius_config` | Maps dashboard clients to gDE API campaign IDs for automated sync |
 | `local_display_dashboard` | Daily Local Display metrics from Gemius gDE API, per placement |
 
@@ -217,6 +231,7 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - **FAZA 4C (DONE):** Scaling for 50+ clients — DB indexes, server-side aggregation via `get_homepage_summary()` RPC, React memoization (useMemo/React.memo), sync parallelization (batch of 5), table virtualization (@tanstack/react-virtual), code splitting (jsPDF lazy loaded), cache TTL (5min) + LRU eviction (max 5 clients). Deployed 2026-03-25.
 - **FAZA 4D:** AI insights & alerts (anomaly detection, budget pacing)
 - **FAZA 4E (DONE):** Local Display pipeline — Gemius gDE API direct integration via Edge Function `sync-gemius`. Daily sync replaces monthly email pipeline. Apps Script kept as fallback. Deployed 2026-03-27. TikTok pending credentials.
+- **FAZA 4F (DONE):** Direct data pipeline — Google Sheets eliminated from daily sync. Meta via Edge Function `sync-meta` (direct API). Google Ads, DV360, GA4 via Apps Scripts writing directly to Supabase REST API. Deployed 2026-03-28. Monthly Krka reports still use Sheets.
 
 ## FAZA 4E: Local Display Integration (Deployed 2026-03-27)
 
@@ -331,3 +346,49 @@ pg_cron → Edge Function (sync-gemius) → gDE API (gdeapi.gemius.com) → Supa
 - `service_role` key in Script Properties — NEVER in frontend code
 - **DV360 has insertion_order field** — UNIQUE constraints must account for it (lesson learned: Preferred Deal vs Open Market are different rows with same campaign+date)
 - **Always SELECT before DELETE/UPDATE** on production data — log what will be affected before executing
+
+## FAZA 4F: Direct Data Pipeline (Deployed 2026-03-28)
+
+Google Sheets eliminated from daily data pipeline. All sources write directly to Supabase.
+
+### Architecture
+```
+Meta:        pg_cron (3x daily) → Edge Function "sync-meta" → Meta Marketing API → campaign_data
+Google Ads:  Google Ads Scripts (daily) → Apps Script → Supabase REST API → campaign_data
+DV360:       Gmail CSV (daily) → Apps Script → Supabase REST API → campaign_data
+GA4:         GA4 Data API (monthly) → Apps Script → Supabase REST API → ga4_kpi_data
+```
+
+### Meta Edge Function (`supabase/functions/sync-meta/`)
+| File | Purpose |
+|------|---------|
+| `index.ts` | Entry point, CORS, timezone check (8:00/9:00 Belgrade), sync_log, token expiry warning |
+| `api.ts` | Meta Marketing API calls (insights + pagination), token validation via `/debug_token` |
+| `sync-client.ts` | Per-account sync: fetch → map → dedup → upsert via `upsert_campaign_data_by_dates` RPC |
+| `types.ts` | TypeScript interfaces |
+
+- **API:** `https://graph.facebook.com/v25.0/{account_id}/insights`
+- **Fields:** campaign_name, reach, impressions, clicks, spend, actions, action_values
+- **Params:** level=campaign, time_increment=1 (daily), limit=500
+- **Conversions:** Extracted from `actions` array (lead, purchase, messaging types)
+- **Secrets:** `META_ACCESS_TOKEN` (long-lived, ~60 days). Token expiry warning logged in sync_log when <7 days remaining.
+- **Deploy:** `supabase functions deploy sync-meta --no-verify-jwt`
+- **Manual trigger:** POST `/functions/v1/sync-meta` with `{"trigger":"manual","client_id":"nlb","date_from":"2026-03-01","date_to":"2026-03-28"}`
+- **Schedule:** pg_cron 3 slots (5:00, 6:00, 7:00 UTC) — same pattern as sync-gemius
+
+### Database
+| Table | Purpose |
+|-------|---------|
+| `meta_config` | Maps client_id → Meta ad account IDs (NLB: act_459770415075805, Krka: act_405576035057636) |
+
+**New RPC:** `upsert_campaign_data_by_dates(p_client_id, p_platform, p_date_from, p_date_to, p_rows)` — date-range scoped DELETE+INSERT. Used by sync-meta and Google Ads lookback. Unlike `upsert_campaign_data` (month-level), this deletes only specific dates.
+
+### Apps Scripts → Supabase Direct
+All scripts use the same REST API pattern from `gemius-to-supabase.js`: DELETE by filters + INSERT in batches of 500.
+- **Script Properties required:** `SUPABASE_URL`, `SUPABASE_KEY` (service_role)
+- **Google Ads lookback:** NLB and Urban Garden rewrite last 3 days for conversion lag correction (DELETE by date range, not month)
+- **DV360 Krka filter:** Exclude Farma/Pharm/Septolete campaigns, include only "krka terme"
+- **GA4:** Uses existing `upsert_ga4_data` RPC pattern (DELETE by month + INSERT)
+
+### Monthly Report Scripts (NOT migrated)
+`meta-report-monthly-krka.js`, `googleAds-report-monthly-krka.js`, `dv360-report-monthly-krka.js` still write to Google Sheets for PDF report generation. Migration planned for future phase.
