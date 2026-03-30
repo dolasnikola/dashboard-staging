@@ -11,14 +11,12 @@ import AdminPanel from './components/admin/AdminPanel'
 import Notification from './components/ui/Notification'
 import ImportModal from './components/modals/ImportModal'
 import BudgetModal from './components/modals/BudgetModal'
-import SheetsModal from './components/modals/SheetsModal'
 
 export default function App() {
   const { isAuthenticated, isLoading, checkSession, setupAuthListener } = useAuthStore()
   const initDashboard = useAppStore(s => s.initDashboard)
   const [importOpen, setImportOpen] = useState(false)
   const [budgetOpen, setBudgetOpen] = useState(false)
-  const [sheetsOpen, setSheetsOpen] = useState(false)
   const [showSetPassword, setShowSetPassword] = useState(false)
 
   useEffect(() => {
@@ -68,7 +66,6 @@ export default function App() {
       <Header
         onImportClick={() => setImportOpen(true)}
         onBudgetClick={() => setBudgetOpen(true)}
-        onSheetsClick={() => setSheetsOpen(true)}
       />
       <Routes>
         <Route path="/" element={<HomePage />} />
@@ -79,7 +76,6 @@ export default function App() {
       <Notification />
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
       {budgetOpen && <BudgetModal onClose={() => setBudgetOpen(false)} />}
-      {sheetsOpen && <SheetsModal onClose={() => setSheetsOpen(false)} />}
     </>
   )
 }

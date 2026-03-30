@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 
-export default function Header({ onImportClick, onBudgetClick, onSheetsClick }) {
+export default function Header({ onImportClick, onBudgetClick }) {
   const { currentUserRole, logout } = useAuthStore()
   const navigate = useNavigate()
   const isViewer = currentUserRole === 'viewer'
@@ -27,7 +27,6 @@ export default function Header({ onImportClick, onBudgetClick, onSheetsClick }) 
         )}
         {!isViewer && (
           <>
-            <button className="btn" onClick={onSheetsClick}>Sheets Sync</button>
             <button className="btn" onClick={onBudgetClick}>Budget</button>
             <button className="btn btn-primary" onClick={onImportClick}>Import CSV</button>
           </>
