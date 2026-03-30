@@ -26,7 +26,7 @@ Built with React 19, Vite 8, Tailwind CSS v4, Zustand for state management, reac
 - `db.js` — Async Supabase queries: fetchClients (with preferredOrder), prefetchClientData (per-client guard), fetchHomepageSummary (server-side aggregation via RPC), dbSaveCampaignData (deduplication), admin functions, dbGetLastSync, runDiagnostics (exposed to window)
 - `data.js` — Constants (PLATFORM_NAMES, PLATFORM_BADGE, METRIC_LABELS, NLB_PRODUCTS), formatting (fmt, fmtMetric), CSV parsing (parseCSV, detectPlatform, mapRow)
 - `utils.js` — Date range helpers (getDateRangeBounds, getMonthsInRange), filtering (getFilteredData), aggregation (aggregateByCampaign, groupByProduct), MoM comparison (getMoMChange returns object, not HTML), getDailyTotals
-- `sync.js` — Google Sheets sync (syncOneSheet, syncAllSheets with _syncInProgress guard, syncGA4Sheet), uses callbacks for status updates
+- `sync.js` — Google Sheets sync (legacy, no longer auto-called). SheetsModal still uses syncOneSheet for manual sync.
 
 ### State Management (`src/stores/`)
 - `authStore.js` — Zustand: currentUser, currentUserRole, isAuthenticated, isLoading + login(), logout(), checkSession(), setupAuthListener()
@@ -98,14 +98,14 @@ GA4:         GA4 Data API → Apps Script → Supabase REST API (monthly)
 Gemius:      pg_cron → Edge Function "sync-gemius" → gDE API → Supabase
 ```
 Google Sheets eliminated from daily pipeline. Monthly report scripts (Krka) still use Sheets.
-Legacy `sync-sheets` Edge Function remains for fallback but has no active sheet_links.
+`sync-sheets` pg_cron jobs disabled (2026-03-30). Frontend auto-sync removed. Edge Function code kept but not triggered.
 - On login: `checkSession()` → `authStore.loadProfile()` → `appStore.initDashboard()`:
   - `fetchClients()` from Supabase → populate `clients` in store
   - `fetchHomepageSummary(month)` calls RPC `get_homepage_summary` for aggregated metrics + loads budgets into `_cache`
   - `dbGetSheetLinks()` loads sheet URLs into cache
   - React Router renders `HomePage` with client cards from cache
 - On client open: React Router renders `ClientDetail` → `prefetchClientData(id)` → components read from cache
-- `syncAllSheets()` has `_syncInProgress` guard
+- `syncAllSheets()` is no longer auto-called on dashboard load (removed 2026-03-30, was overwriting direct pipeline data)
 
 ## Auth & Roles
 - **Supabase Auth** with email/password
@@ -207,6 +207,8 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - Budgets show 0 until set via Budget modal
 - `sync_log` table has RLS — anon key returns empty array. Frontend reads via authenticated user session. Direct DB access shows all rows.
 - Old vanilla JS files removed from repo 2026-03-21 (app.js, auth.js, data.js, db.js, views.js, style.css, supabase.js)
+- **sync-sheets data overwrite bug (fixed 2026-03-30):** Frontend `appStore.initDashboard()` auto-called `syncAllSheets()` on every load, overwriting direct-pipeline data with stale Google Sheets data. Fix: removed auto-sync call + disabled sync-sheets pg_cron jobs. `sync-gemius` also updated to filter `impressions >= 10` (skip finished placements/preview traffic).
+- **Google Ads lookback:** All accounts (NLB, Urban Garden, Krka) now use `lookback_days: 3` for conversion lag correction.
 
 ## Gotchas
 - **Supabase client is `sb`, NOT `supabase`** — historical naming to avoid CDN conflict
