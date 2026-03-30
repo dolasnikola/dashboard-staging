@@ -103,8 +103,12 @@ export async function syncGemiusClient(
     }
 
     // Deduplicate: aggregate rows with same placement+date
-    const deduped = deduplicateRows(rows);
-    console.log(`[gemius] ${client_id}: ${deduped.length} rows after dedup`);
+    const dedupedRaw = deduplicateRows(rows);
+
+    // Filter out rows with negligible impressions (preview traffic, finished placements)
+    const MIN_IMPRESSIONS = 10;
+    const deduped = dedupedRaw.filter((r) => r.impressions >= MIN_IMPRESSIONS);
+    console.log(`[gemius] ${client_id}: ${dedupedRaw.length} rows after dedup, ${deduped.length} after filtering (>=${MIN_IMPRESSIONS} imp)`);
 
     // Upsert daily data via RPC — compute actual date range from data
     const allDates = deduped.map((r) => r.date).sort();
