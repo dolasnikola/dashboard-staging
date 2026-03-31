@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Media House Dashboard</title>
+  <style>
+    body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #1a1a2e; line-height: 1.7; }
+    h1 { font-size: 1.6rem; border-bottom: 2px solid #e0e0e0; padding-bottom: 12px; }
+    h2 { font-size: 1.1rem; margin-top: 28px; }
+    p, li { margin: 8px 0; }
+    ul { padding-left: 20px; }
+    .updated { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: March 31, 2026</p>
+
+  <h2>1. Data Controller</h2>
+  <p>Media House d.o.o., Belgrade, Serbia ("we", "us") operates this dashboard application.</p>
+
+  <h2>2. What Data We Collect</h2>
+  <ul>
+    <li><strong>User account data:</strong> Email address and name, provided during account setup by an administrator.</li>
+    <li><strong>Advertising campaign data:</strong> Aggregated campaign performance metrics (impressions, clicks, spend, conversions) retrieved from third-party ad platforms via authorized API connections.</li>
+    <li><strong>Authentication data:</strong> Session tokens managed by Supabase Auth. Passwords are hashed and never stored in plain text.</li>
+  </ul>
+
+  <h2>3. What We Do NOT Collect</h2>
+  <ul>
+    <li>Personal data of ad viewers or end users</li>
+    <li>Tracking cookies or analytics on dashboard visitors</li>
+    <li>Financial or payment information</li>
+    <li>Location data beyond what ad platforms report in aggregate</li>
+  </ul>
+
+  <h2>4. How We Use Data</h2>
+  <p>All data is used exclusively for:</p>
+  <ul>
+    <li>Displaying campaign performance metrics to authorized users</li>
+    <li>Generating PDF performance reports for clients</li>
+    <li>Budget tracking and campaign optimization</li>
+  </ul>
+
+  <h2>5. Data Sharing</h2>
+  <p>We do not sell, rent, or share data with third parties. Campaign data is accessible only to authorized dashboard users assigned to the relevant client account.</p>
+
+  <h2>6. Data Storage &amp; Security</h2>
+  <p>Data is stored in Supabase (PostgreSQL) with row-level security policies. All connections use HTTPS/TLS encryption. Access is controlled via role-based permissions (admin, account manager, viewer).</p>
+
+  <h2>7. Third-Party Services</h2>
+  <ul>
+    <li><strong>Supabase</strong> — database and authentication</li>
+    <li><strong>Vercel</strong> — application hosting</li>
+    <li><strong>Cloudflare Workers</strong> — AI-powered report narrative generation</li>
+    <li><strong>Google Ads API, Meta Marketing API, TikTok Marketing API, Gemius gDE API</strong> — campaign data sources</li>
+  </ul>
+
+  <h2>8. Data Retention</h2>
+  <p>Campaign data is retained for as long as the client relationship is active. Users may request account deletion by contacting an administrator.</p>
+
+  <h2>9. Your Rights</h2>
+  <p>Authorized users may request access to, correction of, or deletion of their personal data by contacting us.</p>
+
+  <h2>10. Contact</h2>
+  <p>For privacy inquiries: <strong>info@mediahouse.rs</strong></p>
+</body>
+</html>
