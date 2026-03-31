@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getHomepageSummary, dbGetBudget } from '../../lib/cache'
 import { fmt, PLATFORM_NAMES, PLATFORM_BADGE } from '../../lib/data'
+import { calcClientPacing, PACING_STYLES } from '../../lib/pacing'
 
 export default memo(function ClientCard({ id, client, currentMonth, index }) {
   const navigate = useNavigate()
@@ -19,6 +20,13 @@ export default memo(function ClientCard({ id, client, currentMonth, index }) {
   const pct = totalBudget > 0 ? (totalSpend / totalBudget * 100) : 0
   const fillClass = pct > 90 ? 'bg-gradient-to-r from-red-600 to-red-400' : pct > 70 ? 'bg-gradient-to-r from-orange-500 to-yellow-400' : 'bg-gradient-to-r from-green-600 to-green-400'
   const statusClass = client.status === 'active' ? 'status-active' : 'status-partial'
+
+  // Pacing — only meaningful for current month
+  const isCurrentMonth = currentMonth === new Date().toISOString().slice(0, 7)
+  const pacing = isCurrentMonth ? calcClientPacing(id, client.platforms, currentMonth, p => {
+    return getHomepageSummary(id, p, currentMonth).spend
+  }) : null
+  const ps = pacing ? PACING_STYLES[pacing.status] : null
 
   return (
     <div
@@ -52,13 +60,24 @@ export default memo(function ClientCard({ id, client, currentMonth, index }) {
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 19, fontWeight: 400, letterSpacing: '-0.01em' }}>
           {client.name}
         </span>
-        <span className={statusClass} style={{
-          fontSize: 11, padding: '4px 12px', borderRadius: 20, fontWeight: 600, letterSpacing: '0.02em',
-          background: client.status === 'active' ? 'var(--color-green-light)' : 'var(--color-orange-light)',
-          color: client.status === 'active' ? 'var(--color-green)' : 'var(--color-orange)'
-        }}>
-          {client.statusLabel}
-        </span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {pacing && ps && (
+            <span style={{
+              fontSize: 10, padding: '3px 8px', borderRadius: 12, fontWeight: 600,
+              background: ps.bg, color: ps.color, letterSpacing: '0.02em',
+              whiteSpace: 'nowrap'
+            }}>
+              {ps.icon} {pacing.label}
+            </span>
+          )}
+          <span className={statusClass} style={{
+            fontSize: 11, padding: '4px 12px', borderRadius: 20, fontWeight: 600, letterSpacing: '0.02em',
+            background: client.status === 'active' ? 'var(--color-green-light)' : 'var(--color-orange-light)',
+            color: client.status === 'active' ? 'var(--color-green)' : 'var(--color-orange)'
+          }}>
+            {client.statusLabel}
+          </span>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
@@ -84,6 +103,11 @@ export default memo(function ClientCard({ id, client, currentMonth, index }) {
           <div style={{ height: 5, background: 'var(--color-bg-subtle)', borderRadius: 3, overflow: 'hidden' }}>
             <div className={fillClass} style={{ height: '100%', borderRadius: 3, width: `${Math.min(pct, 100)}%`, transition: 'width 0.6s cubic-bezier(0.22, 1, 0.36, 1)' }} />
           </div>
+          {pacing && (
+            <div style={{ fontSize: 10, color: ps.color, marginTop: 4, fontWeight: 500, opacity: 0.85 }}>
+              {(pacing.pacingRatio * 100).toFixed(0)}% od ocekivanog tempa
+            </div>
+          )}
         </div>
       )}
     </div>

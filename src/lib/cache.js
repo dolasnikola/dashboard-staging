@@ -15,6 +15,7 @@ export const _cache = {
   localDisplayDaily: {}, // key: `ldd_${clientId}_${month}` → rows[] (daily from gDE API)
   sheetLinks: null,   // key → url
   homepageSummary: {},// key: `${clientId}_${platform}_${month}` → {spend,impressions,clicks,conversions}
+  alerts: [],         // all unread/recent alerts
   _prefetched: {},    // clientId → timestamp (ms) of last prefetch
   _accessOrder: []    // LRU order: most recent at end
 }
@@ -134,6 +135,15 @@ export function getSheetLinks() {
   return _cache.sheetLinks || {}
 }
 
+export function getAlerts(clientId) {
+  if (!clientId) return _cache.alerts || []
+  return (_cache.alerts || []).filter(a => a.client_id === clientId)
+}
+
+export function getUnreadAlertCount() {
+  return (_cache.alerts || []).filter(a => !a.is_read && !a.is_dismissed).length
+}
+
 export function clearCache() {
   _cache.clients = null
   _cache.campaignData = {}
@@ -144,6 +154,7 @@ export function clearCache() {
   _cache.localDisplayDaily = {}
   _cache.sheetLinks = null
   _cache.homepageSummary = {}
+  _cache.alerts = []
   _cache._prefetched = {}
   _cache._accessOrder = []
 }

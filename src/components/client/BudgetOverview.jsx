@@ -2,11 +2,13 @@ import { useAppStore } from '../../stores/appStore'
 import { dbGetBudget } from '../../lib/cache'
 import { getFilteredData, getDateRangeBounds, getCurrentMonth } from '../../lib/utils'
 import { fmt, PLATFORM_NAMES } from '../../lib/data'
+import { calcPacing, PACING_STYLES } from '../../lib/pacing'
 
 export default function BudgetOverview({ clientId, client }) {
   const { activeDateRange, customDateFrom, customDateTo } = useAppStore()
   const bounds = getDateRangeBounds(activeDateRange, customDateFrom, customDateTo)
   const month = bounds.month || getCurrentMonth()
+  const showPacing = activeDateRange === 'this_month'
 
   return (
     <div style={{
@@ -21,6 +23,9 @@ export default function BudgetOverview({ clientId, client }) {
         const pct = budget > 0 ? (spent / budget * 100) : 0
         const fillClass = pct > 90 ? 'from-red-600 to-red-400' : pct > 70 ? 'from-orange-500 to-yellow-400' : 'from-green-600 to-green-400'
         const alertMsg = pct > 95 ? '⚠ Budžet je skoro potrošen!' : pct > 85 ? '⚡ Budžet se bliži limitu' : ''
+
+        const pacing = showPacing ? calcPacing(clientId, p, month, spent) : null
+        const ps = pacing ? PACING_STYLES[pacing.status] : null
 
         return (
           <div key={p} style={{
@@ -46,6 +51,21 @@ export default function BudgetOverview({ clientId, client }) {
                     <div className={`bg-gradient-to-r ${fillClass}`} style={{ height: '100%', borderRadius: 3, width: `${Math.min(pct, 100)}%`, transition: 'width 0.6s cubic-bezier(0.22, 1, 0.36, 1)' }} />
                   </div>
                 </div>
+                {pacing && pacing.status !== 'no_data' && (
+                  <div style={{
+                    marginTop: 8, padding: '5px 10px', fontSize: 11, borderRadius: 'var(--radius-sm)',
+                    background: ps.bg, color: ps.color,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6
+                  }}>
+                    <span style={{ fontWeight: 600 }}>
+                      {ps.icon} {pacing.label}
+                    </span>
+                    <span style={{ opacity: 0.85, fontSize: 10 }}>
+                      {(pacing.pacingRatio * 100).toFixed(0)}% tempa
+                      ({pacing.daysPassed}/{pacing.daysTotal} dana)
+                    </span>
+                  </div>
+                )}
                 {alertMsg && (
                   <div style={{
                     marginTop: 8, padding: '6px 10px', fontSize: 11, borderRadius: 'var(--radius-sm)',

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { fetchClients, fetchHomepageSummary, dbGetSheetLinks } from '../lib/db'
+import { fetchClients, fetchHomepageSummary, dbGetSheetLinks, fetchAlerts } from '../lib/db'
 
 let _notifyTimer = null
 
@@ -28,7 +28,7 @@ export const useAppStore = create((set, get) => ({
 
       const now = new Date()
       const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      await Promise.all([fetchHomepageSummary(currentMonth), dbGetSheetLinks()])
+      await Promise.all([fetchHomepageSummary(currentMonth), dbGetSheetLinks(), fetchAlerts()])
       set({ isInitialized: true, isInitializing: false })
 
       // Auto-sync from sheets removed — FAZA 4F uses direct pipeline

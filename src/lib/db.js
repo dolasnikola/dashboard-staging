@@ -182,14 +182,23 @@ export async function fetchHomepageSummary(month) {
     }
   })
 
-  const { data: budgetData, error: budgetError } = await sb.from('budgets').select('*')
-  if (budgetError) console.error('[fetchHomepageSummary] budgets error:', budgetError.message)
+  const [budgetRes, flightRes] = await Promise.all([
+    sb.from('budgets').select('*'),
+    sb.from('flight_days').select('*').eq('month', month)
+  ])
+  if (budgetRes.error) console.error('[fetchHomepageSummary] budgets error:', budgetRes.error.message)
+  if (flightRes.error) console.error('[fetchHomepageSummary] flight_days error:', flightRes.error.message)
 
   // Only update cache after all queries succeed
   _cache.homepageSummary = newSummary
-  if (budgetData) {
-    budgetData.forEach(row => {
+  if (budgetRes.data) {
+    budgetRes.data.forEach(row => {
       _cache.budgets[`budget_${row.client_id}_${row.platform}_${row.month}`] = Number(row.amount) || 0
+    })
+  }
+  if (flightRes.data) {
+    flightRes.data.forEach(row => {
+      _cache.flightDays[`flight_${row.client_id}_${row.month}`] = row.days || []
     })
   }
 }
@@ -415,6 +424,42 @@ export async function dbGetLastSync() {
     .select('*').order('started_at', { ascending: false }).limit(1).single()
   if (error) { console.log('[dbGetLastSync] No sync log yet:', error.message); return null }
   return data
+}
+
+// ============== ALERTS ==============
+
+export async function fetchAlerts() {
+  const { data, error } = await sb
+    .from('alerts')
+    .select('*')
+    .eq('is_dismissed', false)
+    .gte('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (error) { console.error('[fetchAlerts]', error.message); return }
+  _cache.alerts = data || []
+}
+
+export async function markAlertRead(alertId) {
+  const { error } = await sb.from('alerts').update({ is_read: true }).eq('id', alertId)
+  if (error) { console.error('[markAlertRead]', error.message); return }
+  const alert = _cache.alerts.find(a => a.id === alertId)
+  if (alert) alert.is_read = true
+}
+
+export async function markAllAlertsRead() {
+  const unread = (_cache.alerts || []).filter(a => !a.is_read)
+  if (unread.length === 0) return
+  const ids = unread.map(a => a.id)
+  const { error } = await sb.from('alerts').update({ is_read: true }).in('id', ids)
+  if (error) { console.error('[markAllAlertsRead]', error.message); return }
+  unread.forEach(a => { a.is_read = true })
+}
+
+export async function dismissAlert(alertId) {
+  const { error } = await sb.from('alerts').update({ is_dismissed: true }).eq('id', alertId)
+  if (error) { console.error('[dismissAlert]', error.message); return }
+  _cache.alerts = (_cache.alerts || []).filter(a => a.id !== alertId)
 }
 
 // ============== ADMIN ==============
