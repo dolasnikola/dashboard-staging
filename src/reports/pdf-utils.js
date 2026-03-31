@@ -75,7 +75,15 @@ export function getMonthNameEn(monthStr) {
 }
 
 // ============== CSV PARSING ==============
+const ALLOWED_CSV_DOMAINS = ['docs.google.com', 'sheets.googleapis.com']
+
 export async function fetchCSV(url) {
+  try {
+    const hostname = new URL(url).hostname
+    if (!ALLOWED_CSV_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d))) {
+      throw new Error('Blocked fetch: URL domain not allowed')
+    }
+  } catch (e) { if (e.message.includes('Blocked')) throw e; throw new Error('Invalid URL') }
   const response = await fetch(url)
   const text = await response.text()
   return parseCSVText(text)

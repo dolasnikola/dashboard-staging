@@ -123,6 +123,12 @@ function generatePlatformNarrative(platform, data, reportData) {
 async function fetchAINarratives(reportData) {
   const workerUrl = reportData.config.ai_worker_url
   if (!workerUrl) { console.warn('[AI] No worker URL configured, skipping AI'); return null }
+  try {
+    const hostname = new URL(workerUrl).hostname
+    if (!hostname.endsWith('.workers.dev') && !hostname.endsWith('.cloudflare.com')) {
+      console.warn('[AI] Worker URL domain not allowed:', hostname); return null
+    }
+  } catch { console.warn('[AI] Invalid worker URL'); return null }
 
   const cacheKey = `reportNarrative_${reportData.clientId}_${reportData.reportMonth}`
   const platformKeys = Object.keys(reportData.platforms)

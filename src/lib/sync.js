@@ -3,7 +3,17 @@ import { getSheetLinks } from './cache'
 import { dbSaveCampaignData, dbSaveGA4Data, dbSaveSheetLinks } from './db'
 import { getCurrentMonth } from './utils'
 
+const ALLOWED_FETCH_DOMAINS = ['docs.google.com', 'sheets.googleapis.com']
+
+function isAllowedUrl(url) {
+  try {
+    const hostname = new URL(url).hostname
+    return ALLOWED_FETCH_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d))
+  } catch { return false }
+}
+
 export async function fetchSheetCSV(url) {
+  if (!isAllowedUrl(url)) throw new Error(`Blocked fetch: URL domain not allowed`)
   const response = await fetch(url)
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return await response.text()

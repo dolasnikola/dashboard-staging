@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Cloudflare Wrangler
+.wrangler/
+worker/.wrangler/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Vite cache
+.vite/
+
+# Scripts with secrets (Apps Script source — deploy via Google Apps Script editor)
+scripts/
+
+# Audit notes
+audit.md
