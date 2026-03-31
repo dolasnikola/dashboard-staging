@@ -19,12 +19,12 @@ Built with React 19, Vite 8, Tailwind CSS v4, Zustand for state management, reac
 
 ### Data Layer (`src/lib/`)
 - `supabase.js` — Supabase client init, exports `sb`
-- `cache.js` — In-memory `_cache` object + synchronous read functions. Cache TTL 5min, LRU max 5 clients.
-- `db.js` — Async Supabase queries: fetchClients, prefetchClientData, fetchHomepageSummary (RPC), fetchAlerts, dbSaveCampaignData (deduplication), admin functions
-- `pacing.js` — Budget pacing calculations: `calcPacing()`, `calcClientPacing()`, flight-days aware
-- `data.js` — Constants (PLATFORM_NAMES, PLATFORM_BADGE, METRIC_LABELS), formatting (fmt), CSV parsing
-- `utils.js` — Date range helpers, filtering, aggregation, MoM comparison
-- `sync.js` — Legacy Google Sheets sync (manual only via SheetsModal)
+- `cache.js` — In-memory `_cache` object + synchronous read functions (dbGetCampaignData, dbGetBudget, dbGetFlightDays, dbGetGA4Data, dbGetAllCampaignDataForPlatform, getHomepageSummary, getAlerts, getUnreadAlertCount, getSheetLinks, clearCache). Cache TTL 5min (`CACHE_TTL_MS`), LRU max 5 clients (`MAX_CACHED_CLIENTS`). Functions: `isClientCacheValid()`, `touchClient()`, `clearClientCache()`.
+- `db.js` — Async Supabase queries: fetchClients (with preferredOrder), prefetchClientData (per-client guard, loads campaign_data + budgets + flight_days + ga4 + local_display in parallel), fetchHomepageSummary (server-side aggregation via RPC + budgets + flight_days), fetchAlerts, dbSaveCampaignData (deduplication by aggregating before write), markAlertRead, markAllAlertsRead, dismissAlert, admin functions (dbGetAllUsers, dbUpdateUserRole, dbSetClientAccess), dbGetLastSync, runDiagnostics (exposed to window)
+- `pacing.js` — Budget pacing: `calcPacing(clientId, platform, month, actualSpend)`, `calcClientPacing()` aggregate, `PACING_STYLES` constants. Flight-days aware.
+- `data.js` — Constants (PLATFORM_NAMES, PLATFORM_BADGE, METRIC_LABELS, NLB_PRODUCTS), formatting (fmt, fmtMetric), CSV parsing (parseCSV, detectPlatform, mapRow)
+- `utils.js` — Date range helpers (getDateRangeBounds, getMonthsInRange, getCurrentMonth), filtering (getFilteredData), aggregation (aggregateByCampaign, groupByProduct), MoM comparison (getMoMChange returns object, not HTML), getDailyTotals
+- `sync.js` — Legacy Google Sheets sync (manual only via SheetsModal, no longer auto-called)
 
 ### State Management (`src/stores/`)
 - `authStore.js` — Zustand: currentUser, currentUserRole, login/logout/checkSession
@@ -123,6 +123,16 @@ Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still 
 | `alerts` | Budget pacing, metric anomaly, and sync failure alerts |
 | `alert_configs` | Per-client alert thresholds and enable/disable settings |
 
+## Supabase Setup
+- **Project:** Media House (vorffefuboftlcwteucu.supabase.co)
+- **Anon key** in `src/lib/supabase.js` (public, starts with `sb_publishable_`)
+- **Never use service_role key** in frontend code
+- First admin user must be created in Supabase Auth dashboard, then role set via SQL:
+  ```sql
+  INSERT INTO user_profiles (id, email, full_name, role)
+  SELECT id, email, 'Name', 'admin' FROM auth.users WHERE email = 'your@email.com';
+  ```
+
 ## Adding a New Client
 1. Admin > Klijenti > + Novi klijent — fill form (ID, name, currency, platforms)
 2. Admin > Korisnici — assign user access
@@ -137,6 +147,21 @@ Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still 
 - **Supabase:** vorffefuboftlcwteucu.supabase.co
 - **Worker:** `cd worker && npx wrangler deploy`
 - **Edge Functions:** `supabase functions deploy <name> --no-verify-jwt` or via Supabase MCP
+- **GitHub repo:** github.com/dolasnikola/dashboard-staging (private)
+- `vercel.json` configured with build command, output directory, and SPA rewrite rule
+
+## Dependencies (package.json)
+- react, react-dom, react-router-dom, @supabase/supabase-js, chart.js, react-chartjs-2, zustand, jspdf, jspdf-autotable, @tanstack/react-virtual
+- Dev: vite, @vitejs/plugin-react, tailwindcss, @tailwindcss/vite
+
+## Known Issues
+- Debug logging active in `src/lib/db.js` (`[prefetchHomepage]`, `[dbSave]`) — remove after stabilization
+- Client display order is alphabetical (ORDER BY name). `sort_order` column exists but not yet used in UI.
+- Budgets show 0 until set via Budget modal
+- `sync_log` table has RLS — anon key returns empty array. Frontend reads via authenticated user session.
+- **sync-sheets data overwrite bug (fixed 2026-03-30):** Frontend auto-called `syncAllSheets()` on every load, overwriting direct-pipeline data. Fix: removed auto-sync + disabled sync-sheets pg_cron jobs.
+- **Google Ads lookback:** All accounts now use `lookback_days: 3` for conversion lag correction.
+- TikTok API integration pending credentials (from FAZA 4E).
 
 ## Gotchas
 - **Supabase client is `sb`, NOT `supabase`** — historical naming
@@ -150,6 +175,26 @@ Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still 
 - **Supabase CLI on Windows:** `npx supabase` conflicts with `supabase.js`. Use `supabase` directly or Supabase MCP.
 - **DV360 has insertion_order field** — UNIQUE constraints must account for it
 - **Always SELECT before DELETE/UPDATE** on production data
+
+## FAZA 2: Automated Data Sync (Legacy — replaced by FAZA 4F)
+Edge Function `sync-sheets` — now disabled but code kept for reference.
+- **Architecture:** pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net → Edge Function → Google Sheets CSV → Supabase
+- **Edge Function files:** `supabase/functions/sync-sheets/` — index.ts, csv.ts, platform.ts, sync-campaigns.ts, sync-ga4.ts, types.ts
+- **pg_net timeout:** Set to `timeout_milliseconds := 120000` (2 min) in all cron jobs. Default 5s was too short.
+- **GA4 KPI sync:** Handles both Serbian (`Mesec`, `Proizvod`) and English column names
+- **Status:** Disabled 2026-03-30. Replaced by direct pipeline (FAZA 4F).
+
+## Apps Script Details (`scripts/`)
+**All scripts use:** `SUPABASE_URL` + `SUPABASE_KEY` (service_role) in Script Properties. DELETE by filters + INSERT in batches of 500.
+
+**gemius-to-supabase.js (fallback):**
+- Searches Gmail for Gemius emails (`from:no-reply@gde.gemius.com`)
+- Detects client from subject keywords via `CLIENT_MAP`
+- Parses XLSX via Drive API v2 (upload to Drive as Google Sheet, read, delete temp file)
+- **Header detection:** Scans first 30 rows for row containing both "Placement" AND "Imp"
+- **Placement parsing:** `LD/Blic / 320x100 / Product` → publisher: Blic, format: 320x100, type: Product
+- **Requires:** Drive API v2 enabled (Services → Drive API → v2)
+- **Functions:** `listGemiusEmails` (scout), `inspectHeaders` (debug), `dryRun` (preview), `importGemiusReport` (real import)
 
 ## Scaling Roadmap
 - **FAZA 1 (DONE):** Supabase replaces localStorage. Deployed on Vercel.
