@@ -11,7 +11,7 @@ export default function PlatformTabs({ platforms, activePlatform, defaultPlatfor
       boxShadow: 'var(--shadow-default)'
     }}>
       {allTabs.map(p => {
-        const label = p === 'overview' ? 'Overview' : PLATFORM_NAMES[p]
+        const label = p === 'overview' ? 'Overview' : p === 'reports' ? 'Izveštaji' : PLATFORM_NAMES[p]
         const isActive = p === activePlatform
         return (
           <button

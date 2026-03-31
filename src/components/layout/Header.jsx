@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import AlertBell from '../ui/AlertBell'
+import SyncStatusIndicator from '../ui/SyncStatusIndicator'
 
 export default function Header({ onImportClick, onBudgetClick }) {
   const { currentUserRole, logout } = useAuthStore()
@@ -23,6 +24,7 @@ export default function Header({ onImportClick, onBudgetClick }) {
         Performance <span style={{ color: 'var(--color-accent)' }}>Dashboard</span>
       </h1>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <SyncStatusIndicator />
         <AlertBell />
         {currentUserRole === 'admin' && (
           <button className="btn" onClick={() => navigate('/admin')}>Admin</button>

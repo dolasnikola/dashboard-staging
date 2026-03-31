@@ -9,6 +9,7 @@ import OverviewTab from './OverviewTab'
 import PlatformView from './PlatformView'
 import GA4View from './GA4View'
 import LocalDisplayView from './LocalDisplayView'
+import ReportsTab from './ReportsTab'
 import { PLATFORM_NAMES, PLATFORM_BADGE } from '../../lib/data'
 
 export default function ClientDetail() {
@@ -51,6 +52,7 @@ export default function ClientDetail() {
 
   const allPlatforms = [...client.platforms]
   if (client.tiktok) allPlatforms.push('tiktok')
+  if (hasReportConfig) allPlatforms.push('reports')
 
   // Report button (shown for any client with report_configs row)
 
@@ -114,6 +116,8 @@ export default function ClientDetail() {
 
           {activePlatform === 'overview' ? (
             <OverviewTab clientId={clientId} client={client} />
+          ) : activePlatform === 'reports' ? (
+            <ReportsTab clientId={clientId} client={client} />
           ) : activePlatform === 'local_display' ? (
             <LocalDisplayView clientId={clientId} />
           ) : client.setup[activePlatform]?.type === 'ga4_kpi' ? (
