@@ -273,6 +273,77 @@ Stabilnost i pouzdanost sistema kako raste broj klijenata.
 
 ---
 
+## Implementirano (2026-03-31)
+
+### 5.3 DevOps Basics — DONE
+- **Vitest setup** sa 80 unit testova (svi prolaze):
+  - `src/tests/data.test.js` (38) — fmt, parseCSV, detectPlatform, parseNum, mapRow
+  - `src/tests/utils.test.js` (28) — getDateRangeBounds, aggregateByCampaign, groupByProduct, getMoMChange, getDailyTotals
+  - `src/tests/pacing.test.js` (14) — calcPacing, calcClientPacing, PACING_STYLES
+- **GitHub Actions CI** (`.github/workflows/test.yml`) — `npm test` + `npm run build` na svakom PR
+- `vitest.config.js`, `npm test` i `npm test:watch` skripte
+
+### 5.5 Cross-Platform Comparison — DONE
+- `src/components/client/PlatformComparison.jsx`
+- Tabela sa svim metrikama (Spend, Impressions, Clicks, Conversions, CTR, CPM, CPC, CPA) po platformi
+- Najbolji performer oznacen zvezdicom (★), invertirana logika za cost metrike
+- Bar chart za CPC & CPA poredjenje
+- Integrisano u OverviewTab (ispod chartova)
+
+### 5.7 Unified Funnel — DONE
+- `src/components/client/FunnelView.jsx`
+- Vizuelni levak: Impressions → Clicks → Conversions sa CTR i Conversion Rate
+- Stacked bar chart sa breakdown-om po platformama
+- Integrisano u OverviewTab (iznad chartova)
+
+### 6.1 Monitoring Panel — DONE
+- `src/components/admin/MonitoringPanel.jsx`
+- KPI kartice: ukupno sync-ova, success rate, neuspesni, prosecno trajanje
+- Bar chart sync-ova po danima (7 dana), tabela po izvoru
+- Lista neuspelih sync-ova sa error porukama
+- Svezina podataka po klijentu (zelena/narandzasta/crvena tacka)
+- Dodat "Monitoring" tab u AdminPanel
+
+### 5.4 Sync Status Indicator — DONE
+- `src/components/ui/SyncStatusIndicator.jsx`
+- Zelena (pulsira) / narandzasta / crvena / siva tacka u Header-u
+- Osvezava se svakih 5 min, tooltip sa statusom
+
+### 5.8 White-label Branding (frontend deo) — DONE
+- `src/lib/branding.js` — getBranding, applyBranding, resetBranding
+- `src/components/layout/BrandingProvider.jsx` — wrappuje ClientDetail rutu
+- Dinamicki menja --color-accent i font iz `client.branding` JSONB polja
+- Resetuje se automatski na homepage
+- **Napomena:** Potrebna DB migracija `ALTER TABLE clients ADD COLUMN branding JSONB` za aktiviranje
+
+### 2.4 Report Download History UI — DONE
+- `src/components/client/ReportsTab.jsx`
+- Novi "Izvestaji" tab u ClientDetail (prikazuje se samo kad postoji report config)
+- Lista generisanih izvestaja sa datumom, statusom, download linkom
+- Cita iz `report_history` tabele
+
+---
+
+## Preostalo za implementaciju
+
+### Moze bez eksternih zavisnosti
+- **3.3 Custom Dashboards** — drag & drop widget grid (zavisi od react-grid-layout)
+- **6.3 Staging Environment** — seed skripta za test podatke
+- **6.4 Error Tracking** — Error boundary komponente u frontendu
+
+### Zahteva eksterne resurse
+- **2.1 Scheduled Report Generation** — Edge Function + pg_cron + Supabase Storage
+- **2.2 Email Delivery** — Resend/SendGrid API key
+- **2.3 Krka Scripts Migration** — testiranje sa produkcijskim podacima
+- **4.1 Supabase Realtime** — mora se uklj. Realtime na Supabase projektu
+- **5.1 TikTok API** — ceka credentials
+- **5.2 LinkedIn API** — ceka B2B klijente
+- **5.3 Data Warehouse** — materialized views, partitioning (Supabase SQL)
+- **5.4 Data Retention** — table partitioning (Supabase admin)
+- **1.1 Branding DB migracija** — `ALTER TABLE clients ADD COLUMN branding JSONB`
+
+---
+
 ## Preporuceni Redosled Implementacije
 
 | Faza | Stavka | Trajanje | Zavisnosti |
