@@ -12,6 +12,7 @@ import Notification from './components/ui/Notification'
 import ImportModal from './components/modals/ImportModal'
 import BudgetModal from './components/modals/BudgetModal'
 import BrandingProvider from './components/layout/BrandingProvider'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 
 export default function App() {
   const { isAuthenticated, isLoading, checkSession, setupAuthListener } = useAuthStore()
@@ -63,7 +64,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <ErrorBoundary>
       <Header
         onImportClick={() => setImportOpen(true)}
         onBudgetClick={() => setBudgetOpen(true)}
@@ -77,6 +78,6 @@ export default function App() {
       <Notification />
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
       {budgetOpen && <BudgetModal onClose={() => setBudgetOpen(false)} />}
-    </>
+    </ErrorBoundary>
   )
 }

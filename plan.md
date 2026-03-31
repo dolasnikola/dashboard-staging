@@ -322,6 +322,14 @@ Stabilnost i pouzdanost sistema kako raste broj klijenata.
 - Lista generisanih izvestaja sa datumom, statusom, download linkom
 - Cita iz `report_history` tabele
 
+### 6.4 Error Boundary — DONE
+- `src/components/ui/ErrorBoundary.jsx`
+- React class component (jedini nacin za error boundary u Reactu)
+- Hvata JS greske u celom komponent stablu, prikazuje user-friendly poruku na srpskom
+- Prikazuje error message u monospace bloku + "Osvezi stranicu" dugme
+- Loguje error i component stack u konzolu
+- Wrappuje ceo App sadrzaj (Header + Routes + Modals)
+
 ---
 
 ## Preostalo za implementaciju
@@ -329,7 +337,6 @@ Stabilnost i pouzdanost sistema kako raste broj klijenata.
 ### Moze bez eksternih zavisnosti
 - **3.3 Custom Dashboards** — drag & drop widget grid (zavisi od react-grid-layout)
 - **6.3 Staging Environment** — seed skripta za test podatke
-- **6.4 Error Tracking** — Error boundary komponente u frontendu
 
 ### Zahteva eksterne resurse
 - **2.1 Scheduled Report Generation** — Edge Function + pg_cron + Supabase Storage
