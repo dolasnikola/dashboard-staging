@@ -79,7 +79,7 @@ ui/Notification.jsx         — Toast notification from appStore
 - `googleAds-to-supabase.js` — Google Ads → Supabase (daily, lookback 3 days)
 - `dv360-to-supabase.js` — DV360 Gmail CSV → Supabase (daily, Krka filter)
 - `nlb-ga4-to-supabase.js` — GA4 Data API → Supabase (monthly)
-- `gemius-to-supabase.js` — Gemius email XLSX → Supabase (fallback for sync-gemius)
+- `gemius-to-supabase.js` — Gemius email XLSX → Supabase (retired, replaced by sync-gemius Edge Function)
 
 ## Data Flow (Direct Pipeline)
 ```
@@ -187,14 +187,9 @@ Edge Function `sync-sheets` — now disabled but code kept for reference.
 ## Apps Script Details (`scripts/`)
 **All scripts use:** `SUPABASE_URL` + `SUPABASE_KEY` (service_role) in Script Properties. DELETE by filters + INSERT in batches of 500.
 
-**gemius-to-supabase.js (fallback):**
-- Searches Gmail for Gemius emails (`from:no-reply@gde.gemius.com`)
-- Detects client from subject keywords via `CLIENT_MAP`
-- Parses XLSX via Drive API v2 (upload to Drive as Google Sheet, read, delete temp file)
-- **Header detection:** Scans first 30 rows for row containing both "Placement" AND "Imp"
-- **Placement parsing:** `LD/Blic / 320x100 / Product` → publisher: Blic, format: 320x100, type: Product
-- **Requires:** Drive API v2 enabled (Services → Drive API → v2)
-- **Functions:** `listGemiusEmails` (scout), `inspectHeaders` (debug), `dryRun` (preview), `importGemiusReport` (real import)
+**gemius-to-supabase.js (retired 2026-03-31):**
+- Replaced by `sync-gemius` Edge Function (gDE API direct). Apps Script trigger should be disabled in Google Apps Script editor.
+- Code kept in Apps Script for historical reference only.
 
 ## Scaling Roadmap
 - **FAZA 1 (DONE):** Supabase replaces localStorage. Deployed on Vercel.
@@ -246,7 +241,7 @@ pg_cron → Edge Function "sync-gemius" → gDE API (gdeapi.gemius.com) → Supa
 ### Two-Table Design
 - `local_display_dashboard` — Daily placement-level data (gDE API). Upsert via `upsert_local_display_daily` RPC.
 - `local_display_report` — Monthly aggregated (auto-rollup via `rollup_local_display_monthly` RPC)
-- Apps Script fallback (`gemius-to-supabase.js`) kept for monthly email pipeline
+- Apps Script fallback retired 2026-03-31 — all Gemius data via gDE API Edge Function
 
 ## FAZA 4F: Direct Data Pipeline (Deployed 2026-03-28)
 
