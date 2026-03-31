@@ -61,6 +61,7 @@ admin/ReportBuilder.jsx     — Report config CRUD per client (FAZA 4B)
 modals/ImportModal.jsx      — CSV drag-and-drop import
 modals/BudgetModal.jsx      — Monthly budget inputs per client/platform
 modals/SheetsModal.jsx      — Sheet URLs + sync buttons
+ui/AlertBell.jsx            — Notification bell with unread count + dropdown (FAZA 4D)
 ui/Notification.jsx         — Toast notification from appStore
 ```
 
@@ -137,6 +138,8 @@ Google Sheets eliminated from daily pipeline. Monthly report scripts (Krka) stil
 | `report_history` | Generated report log: client_id, report_month, pdf_url, status |
 | `meta_config` | Maps dashboard clients to Meta ad account IDs for automated sync |
 | `gemius_config` | Maps dashboard clients to gDE API campaign IDs for automated sync |
+| `alerts` | Budget pacing, metric anomaly, and sync failure alerts (FAZA 4D) |
+| `alert_configs` | Per-client alert thresholds and enable/disable settings (FAZA 4D) |
 | `local_display_dashboard` | Daily Local Display metrics from Gemius gDE API, per placement |
 
 ## Supabase Setup
@@ -231,7 +234,7 @@ pg_cron (3 UTC slots: 5:00, 6:00, 7:00) → pg_net HTTP POST → Edge Function
 - **FAZA 4A (DONE):** Client onboarding via Admin UI — no SQL needed. Deployed 2026-03-24.
 - **FAZA 4B (DONE):** Generic report engine — config-driven PDF reports, no custom JS per client. Generic AI narrative worker. Deployed 2026-03-24.
 - **FAZA 4C (DONE):** Scaling for 50+ clients — DB indexes, server-side aggregation via `get_homepage_summary()` RPC, React memoization (useMemo/React.memo), sync parallelization (batch of 5), table virtualization (@tanstack/react-virtual), code splitting (jsPDF lazy loaded), cache TTL (5min) + LRU eviction (max 5 clients). Deployed 2026-03-25.
-- **FAZA 4D:** AI insights & alerts (anomaly detection, budget pacing)
+- **FAZA 4D (DONE):** AI insights & alerts — budget pacing indicators, anomaly detection RPC, alerts system with notification bell, check-alerts Edge Function. Deployed 2026-03-31.
 - **FAZA 4E (DONE):** Local Display pipeline — Gemius gDE API direct integration via Edge Function `sync-gemius`. Daily sync replaces monthly email pipeline. Apps Script kept as fallback. Deployed 2026-03-27. TikTok pending credentials.
 - **FAZA 4F (DONE):** Direct data pipeline — Google Sheets eliminated from daily sync. Meta via Edge Function `sync-meta` (direct API). Google Ads, DV360, GA4 via Apps Scripts writing directly to Supabase REST API. Deployed 2026-03-28. Monthly Krka reports still use Sheets.
 
@@ -394,3 +397,50 @@ All scripts use the same REST API pattern from `gemius-to-supabase.js`: DELETE b
 
 ### Monthly Report Scripts (NOT migrated)
 `meta-report-monthly-krka.js`, `googleAds-report-monthly-krka.js`, `dv360-report-monthly-krka.js` still write to Google Sheets for PDF report generation. Migration planned for future phase.
+
+## FAZA 4D: AI Insights & Alerts (Deployed 2026-03-31)
+
+### Budget Pacing (Frontend)
+- **`src/lib/pacing.js`** — `calcPacing(clientId, platform, month, actualSpend)` returns pacing ratio, status (on_track/overspending/underspending), expected vs actual spend. Flight-days aware.
+- **`calcClientPacing()`** — Aggregates pacing across all platforms for homepage cards.
+- **Thresholds:** >115% = overspending (red), <85% = underspending (orange), else on_track (green)
+- **Shows only for `this_month`** date range (pacing is meaningless for past months)
+- **Homepage:** Pacing badge on ClientCard next to status label
+- **Client detail:** Pacing indicator below each platform budget bar in BudgetOverview
+- **Data dependency:** `fetchHomepageSummary()` now also loads `flight_days` for current month
+
+### Anomaly Detection (Database RPC)
+- **`detect_metric_anomalies(p_client_id, p_platform, p_lookback_days, p_baseline_days)`** — SQL function comparing recent 7-day average vs 30-day baseline for CPC, CTR, Spend, CPM
+- Returns deviation percentage per metric
+- Default alert threshold: 30% deviation (configurable per client via `alert_configs` table)
+
+### Alerts System
+- **`alerts` table** — Stores budget_pacing, metric_anomaly, sync_failure alerts with severity, expiry (7 days), read/dismissed state
+- **`alert_configs` table** — Per-client thresholds: alert_type, metric_name, threshold_pct, enabled
+- **RLS:** Users see alerts for their assigned clients only. Admins can manage alert_configs.
+- **`cleanup_expired_alerts()`** RPC — Deletes alerts past `expires_at`
+
+### AlertBell Component
+- **`src/components/ui/AlertBell.jsx`** — Bell icon in Header with unread count badge
+- Dropdown panel: alert list with severity dots, timestamps, dismiss/mark-read actions
+- Click alert → navigate to client detail
+- "Označi sve kao pročitano" bulk action
+
+### Edge Function (`supabase/functions/check-alerts/`)
+| File | Purpose |
+|------|---------|
+| `index.ts` | Entry point, CORS, timezone check (10:00 Belgrade), sync_log logging |
+| `pacing.ts` | Budget pacing: reads budgets + flight_days + campaign spend, generates alerts for >120% or <70% pacing |
+| `anomaly.ts` | Metric anomalies: calls `detect_metric_anomalies` RPC, respects `alert_configs` thresholds |
+| `types.ts` | TypeScript interfaces |
+
+- **Schedule:** pg_cron daily at 8:00 UTC (10:00 Belgrade CEST), runs after data syncs complete
+- **Deduplication:** Skips alert if identical (same client/type/platform/metric) exists within 24h
+- **Sync failure detection:** Checks `sync_log` for errors in last 24h
+- **Manual trigger:** POST `/functions/v1/check-alerts` with `{"trigger":"manual"}` or `{"trigger":"manual","client_id":"nlb"}`
+- **Deploy:** Via Supabase MCP `deploy_edge_function` or `supabase functions deploy check-alerts --no-verify-jwt`
+
+### Cache & Data Layer
+- `_cache.alerts` — Array of alert objects, loaded during `initDashboard()`
+- `getAlerts(clientId?)`, `getUnreadAlertCount()` in `cache.js`
+- `fetchAlerts()`, `markAlertRead()`, `markAllAlertsRead()`, `dismissAlert()` in `db.js`
