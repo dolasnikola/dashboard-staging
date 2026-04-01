@@ -78,7 +78,7 @@ function generateExecutiveSummary(reportData) {
   const channelNames = platformKeys.map(p => reportData.platformLabels[p] || p)
   const numWord = ['', 'jedan', 'dva', 'tri', 'cetiri', 'pet'][platformKeys.length] || platformKeys.length
 
-  let text = `U ${reportData.monthLabel.toLowerCase()}u je digitalno oglasavanje realizovano kroz ${numWord} kljucna kanala komunikacije:\n\n`
+  let text = `U ${reportData.monthLabel.toLowerCase()}u je digitalno oglašavanje realizovano kroz ${numWord} ključna kanala komunikacije:\n\n`
   channelNames.forEach(n => { text += `- ${n}\n` })
   text += '\n'
 
@@ -91,7 +91,7 @@ function generateExecutiveSummary(reportData) {
 
   let totalSpend = 0
   platformKeys.forEach(p => { totalSpend += reportData.platforms[p].totals.spend || 0 })
-  text += `\nKombinovano, svi kanali su obezbedili balans izmedju volumena, vidljivosti i relevantnog saobracaja, uz ukupno ulaganje od ${fmtEur(totalSpend)}.`
+  text += `\nKombinovano, svi kanali su obezbedili balans između volumena, vidljivosti i relevantnog saobraćaja, uz ukupno ulaganje od ${fmtEur(totalSpend)}.`
 
   return text
 }
@@ -102,19 +102,19 @@ function generatePlatformNarrative(platform, data, reportData) {
   const campaigns = platform === 'dv360' && data.insertionOrders?.length > 0
     ? data.insertionOrders : data.campaigns
 
-  let text = `Kampanje na ${name} platformi tokom ${reportData.monthLabel.toLowerCase()}a ostvarile su stabilne rezultate, sa ukupno ${fmtNum(t.reach)} dosegnutih korisnika i ${fmtNum(t.impressions)} impresija, cime je obezbedjeno snazno prisustvo brenda.`
+  let text = `Kampanje na ${name} platformi tokom ${reportData.monthLabel.toLowerCase()}a ostvarile su stabilne rezultate, sa ukupno ${fmtNum(t.reach)} dosegnutih korisnika i ${fmtNum(t.impressions)} impresija, čime je obezbeđeno snažno prisustvo brenda.`
 
   if (campaigns.length > 1) {
     const sorted = [...campaigns].sort((a, b) => (b.impressions || 0) - (a.impressions || 0))
     const top = sorted[0]
-    text += `\n${top.campaign} imala je kljucnu ulogu sa ${fmtNum(top.impressions)} impresija i ${fmtNum(top.clicks)} klikova.`
+    text += `\n${top.campaign} imala je ključnu ulogu sa ${fmtNum(top.impressions)} impresija i ${fmtNum(top.clicks)} klikova.`
     const bestCtr = [...campaigns].sort((a, b) => (b.ctr || 0) - (a.ctr || 0))[0]
     if (bestCtr.campaign !== top.campaign && bestCtr.ctr > 0) {
-      text += ` Kampanja "${bestCtr.campaign}" se izdvaja sa najvisim CTR-om od ${bestCtr.ctr.toFixed(2)}%.`
+      text += ` Kampanja "${bestCtr.campaign}" se izdvaja sa najvišim CTR-om od ${bestCtr.ctr.toFixed(2)}%.`
     }
   }
 
-  text += `\nUkupno je ostvareno ${fmtNum(t.clicks)} klikova, uz prosecan CTR od ${t.ctr.toFixed(2)}%.`
+  text += `\nUkupno je ostvareno ${fmtNum(t.clicks)} klikova, uz prosečan CTR od ${t.ctr.toFixed(2)}%.`
   text += `\nSa ukupnim ulaganjem od ${fmtEur(t.spend)}, kampanje su nesmetano emitovane tokom ${reportData.monthLabel.toLowerCase()}a.`
 
   return text
@@ -374,7 +374,7 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
 
     doc.setFont('Montserrat', 'italic')
     doc.setFontSize(16)
-    doc.text('Digital oglasavanje', textCenterX, ty + 2, { align: 'center' })
+    doc.text('Digital oglašavanje', textCenterX, ty + 2, { align: 'center' })
 
     doc.setFont('Montserrat', 'bold')
     doc.setFontSize(18)
