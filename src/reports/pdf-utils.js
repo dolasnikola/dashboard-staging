@@ -192,11 +192,12 @@ function parseGDNRaw(rows, campaignFilter) {
     }
   }
 
+  const MIN_IMPRESSIONS = 20
   const toArray = (obj) => Object.entries(obj).map(([name, d]) => ({
     campaign: name, ...d,
     ctr: d.impressions > 0 ? d.clicks / d.impressions * 100 : 0,
     cpm: d.impressions > 0 ? d.spend / d.impressions * 1000 : 0
-  })).sort((a, b) => b.impressions - a.impressions)
+  })).filter(d => d.impressions >= MIN_IMPRESSIONS).sort((a, b) => b.impressions - a.impressions)
 
   return { campaigns: toArray(campaignAgg), insertionOrders: toArray(ioAgg) }
 }

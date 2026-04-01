@@ -309,11 +309,12 @@ function aggregateDBRows(rows, groupByField) {
     agg[key].spend += Number(r.spend) || 0
     agg[key].reach += Number(r.reach) || 0
   }
+  const MIN_IMPRESSIONS = 20
   return Object.values(agg).map(d => ({
     ...d,
     ctr: d.impressions > 0 ? d.clicks / d.impressions * 100 : 0,
     cpm: d.impressions > 0 ? d.spend / d.impressions * 1000 : 0
-  })).sort((a, b) => b.impressions - a.impressions)
+  })).filter(d => d.impressions >= MIN_IMPRESSIONS).sort((a, b) => b.impressions - a.impressions)
 }
 
 // ============== MAIN GENERATE ==============
