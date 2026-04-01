@@ -228,7 +228,11 @@ function parseGDNScript(rows) {
     else table2.push(item)
   }
 
-  return { campaigns: table1, insertionOrders: table2 }
+  const MIN_IMPRESSIONS = 20
+  return {
+    campaigns: table1.filter(d => d.impressions >= MIN_IMPRESSIONS),
+    insertionOrders: table2.filter(d => d.impressions >= MIN_IMPRESSIONS)
+  }
 }
 
 // ============== LOCAL DISPLAY PARSER ==============
