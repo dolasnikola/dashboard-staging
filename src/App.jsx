@@ -11,6 +11,8 @@ import AdminPanel from './components/admin/AdminPanel'
 import Notification from './components/ui/Notification'
 import ImportModal from './components/modals/ImportModal'
 import BudgetModal from './components/modals/BudgetModal'
+import BrandingProvider from './components/layout/BrandingProvider'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 
 export default function App() {
   const { isAuthenticated, isLoading, checkSession, setupAuthListener } = useAuthStore()
@@ -62,20 +64,20 @@ export default function App() {
   }
 
   return (
-    <>
+    <ErrorBoundary>
       <Header
         onImportClick={() => setImportOpen(true)}
         onBudgetClick={() => setBudgetOpen(true)}
       />
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/:clientId" element={<ClientDetail />} />
+        <Route path="/:clientId" element={<BrandingProvider><ClientDetail /></BrandingProvider>} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Notification />
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
       {budgetOpen && <BudgetModal onClose={() => setBudgetOpen(false)} />}
-    </>
+    </ErrorBoundary>
   )
 }

@@ -6,11 +6,13 @@ import { dbGetAllUsers, dbGetAllClientAccess, dbUpdateUserRole, dbSetClientAcces
 import { PLATFORM_NAMES } from '../../lib/data'
 import ClientForm from './ClientForm'
 import ReportBuilder from './ReportBuilder'
+import MonitoringPanel from './MonitoringPanel'
 
 const TABS = [
   { id: 'users', label: 'Korisnici' },
   { id: 'clients', label: 'Klijenti' },
-  { id: 'reports', label: 'Izvestaji' }
+  { id: 'reports', label: 'Izvestaji' },
+  { id: 'monitoring', label: 'Monitoring' }
 ]
 
 export default function AdminPanel() {
@@ -308,6 +310,10 @@ export default function AdminPanel() {
 
       {activeTab === 'reports' && (
         <ReportBuilder />
+      )}
+
+      {activeTab === 'monitoring' && (
+        <MonitoringPanel />
       )}
     </div>
   )

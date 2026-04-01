@@ -3,6 +3,8 @@ import { useAppStore } from '../../stores/appStore'
 import { getFilteredData } from '../../lib/utils'
 import { fmt, PLATFORM_NAMES } from '../../lib/data'
 import { Doughnut, Bar } from 'react-chartjs-2'
+import FunnelView from './FunnelView'
+import PlatformComparison from './PlatformComparison'
 
 export default function OverviewTab({ clientId, client }) {
   const { activeDateRange, customDateFrom, customDateTo } = useAppStore()
@@ -74,6 +76,8 @@ export default function OverviewTab({ clientId, client }) {
         ))}
       </div>
 
+      <FunnelView clientId={clientId} client={client} />
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
         {pieData.some(v => v > 0) && (
           <div style={{
@@ -122,6 +126,7 @@ export default function OverviewTab({ clientId, client }) {
           </div>
         )}
       </div>
+      <PlatformComparison clientId={clientId} client={client} />
     </div>
   )
 }
