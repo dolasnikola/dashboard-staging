@@ -150,21 +150,32 @@ export function parseGDNData(rows, campaignFilter) {
 }
 
 function parseGDNRaw(rows, campaignFilter) {
+  const header = rows[0].map(h => h.toLowerCase().trim())
+  const colIdx = (name) => header.findIndex(h => h.includes(name))
+
+  const iCampaign = colIdx('campaign') !== -1 ? colIdx('campaign') : 1
+  const iIO = colIdx('insertion order') !== -1 ? colIdx('insertion order') : 2
+  const iImpressions = colIdx('impressions') !== -1 ? colIdx('impressions') : 4
+  const iReach = colIdx('total reach') !== -1 ? colIdx('total reach') : 5
+  const iClicks = colIdx('clicks') !== -1 ? colIdx('clicks') : 6
+  // Prefer "Total Media Cost" / "Total Cost" over "Media Cost" for spend including platform fees
+  const iCost = colIdx('total media cost') !== -1 ? colIdx('total media cost') : (colIdx('total cost') !== -1 ? colIdx('total cost') : (colIdx('media cost') !== -1 ? colIdx('media cost') : 8))
+
   const campaignAgg = {}
   const ioAgg = {}
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i]
-    const campaignName = (row[1] || '').trim()
+    const campaignName = (row[iCampaign] || '').trim()
     if (campaignFilter && campaignName.indexOf(campaignFilter) === -1) continue
 
-    const impressions = cleanNum(row[4])
-    const reach = cleanNum(row[5])
-    const clicks = cleanNum(row[6])
-    let cost = cleanNum(row[8])
+    const impressions = cleanNum(row[iImpressions])
+    const reach = cleanNum(row[iReach])
+    const clicks = cleanNum(row[iClicks])
+    let cost = cleanNum(row[iCost])
     if (cost > 100000) cost = cost / 1000000
 
-    const ioName = (row[2] || '').trim()
+    const ioName = (row[iIO] || '').trim()
 
     if (!campaignAgg[campaignName]) campaignAgg[campaignName] = { impressions: 0, reach: 0, clicks: 0, spend: 0 }
     campaignAgg[campaignName].impressions += impressions
