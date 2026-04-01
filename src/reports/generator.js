@@ -565,6 +565,7 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
       blob: doc.output('blob'),
       filename,
       clientId: reportData.clientId,
+      clientName: reportData.client?.name || reportData.clientId,
       reportMonth: reportData.reportMonth,
       reportConfigId: config.id
     }

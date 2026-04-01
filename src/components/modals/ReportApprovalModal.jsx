@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAppStore } from '../../stores/appStore'
 import { uploadReportPDF, clearAINarrativeCache } from '../../lib/reportStorage'
 
-export default function ReportApprovalModal({ blob, filename, clientId, reportMonth, reportConfigId, onClose }) {
+export default function ReportApprovalModal({ blob, filename, clientId, clientName, reportMonth, reportConfigId, onClose }) {
   const notify = useAppStore(s => s.notify)
   const [uploading, setUploading] = useState(false)
 
@@ -13,7 +13,7 @@ export default function ReportApprovalModal({ blob, filename, clientId, reportMo
 
   const handleApprove = async () => {
     setUploading(true)
-    const url = await uploadReportPDF(blob, clientId, reportMonth, filename, reportConfigId)
+    const url = await uploadReportPDF(blob, clientId, reportMonth, filename, reportConfigId, clientName)
     setUploading(false)
 
     if (url) {
