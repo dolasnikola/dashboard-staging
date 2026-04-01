@@ -67,9 +67,13 @@ ui/Notification.jsx         — Toast notification from appStore
 ### Reports (`src/reports/`)
 - `generator.js` — Generic report engine: config-driven PDF with AI narratives via Cloudflare Worker. Two data paths: Sheets CSV (`collectReportData`) and DB aggregation (`collectReportDataFromDB`). Returns blob for admin approval instead of auto-downloading. Exports: `generateReport()`, `generateReportFromDB()`, `fetchReportConfig()`.
 - `pdf-utils.js` — Shared PDF utilities, jspdf-autotable, creative image cache. DV360 parser (`parseGDNRaw`) uses header-based column lookup with Revenue > Total Media Cost > Media Cost priority. Campaigns with <20 impressions filtered out.
+- `fonts/` — Montserrat font (Regular, Bold, Italic) as base64 JS modules + `register.js` helper. Embedded via `doc.addFileToVFS()` + `doc.addFont()` for UTF-8 Serbian diacritics (č, ć, š, ž, đ) in PDF output.
 
 ### Cloudflare Worker (`worker/`)
-- `worker/src/index.js` — AI narrative generator using Claude API (claude-sonnet-4). Deploy: `cd worker && npx wrangler deploy`
+- `worker/src/index.js` — AI narrative generator using Claude API (claude-sonnet-4). Deploy via Cloudflare Dashboard Quick Edit (no wrangler CLI needed).
+- **Historical comparison:** Worker fetches platform averages from Supabase RPC `get_platform_historical_avg` before calling Claude API. Graceful fallback if unavailable.
+- **Prompt rules:** No budget/spend commentary in platform sections. Anomaly thresholds: >15% CTR/CPC change, >30% CPM change. Each platform section includes at least one sentence comparing to previous period.
+- **Env vars:** `ANTHROPIC_API_KEY`, `ALLOWED_ORIGIN`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (set in Cloudflare Worker Settings)
 
 ### Supabase Edge Functions (`supabase/functions/`)
 - `sync-meta/` — Meta Marketing API → Supabase (pg_cron 3x daily)
@@ -174,7 +178,10 @@ Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still 
 - `dbSaveCampaignData()`, `dbSetBudget()`, `dbSetFlightDays()` are async — must be awaited
 - `getMoMChange()` returns object (not HTML) for React rendering
 - **jspdf-autotable** requires explicit `applyPlugin(jsPDF)` — side-effect import alone does NOT work
+- **PDF fonts:** Montserrat embedded for UTF-8 Serbian. Default jsPDF Times font does NOT support č/ć/š/ž/đ. `toAscii()` removed from PDF text (kept only for filenames).
 - **Report AI Worker CORS** — only allows Vercel production URL. Falls back to local text on localhost.
+- **Report AI Worker timeout** — 90s (Supabase historical fetch + Claude API). Frontend AbortController in `generator.js`.
+- **Worker deploy** — via Cloudflare Dashboard Quick Edit (paste `worker/src/index.js`), NOT `wrangler deploy` (no Node locally).
 - **Supabase CLI on Windows:** `npx supabase` conflicts with `supabase.js`. Use `supabase` directly or Supabase MCP.
 - **DV360 has insertion_order field** — UNIQUE constraints must account for it
 - **DV360 spend metric is Revenue** (includes agency markup), not Media Cost or Total Media Cost
@@ -218,6 +225,8 @@ Edge Function `sync-sheets` — now disabled but code kept for reference.
 - **2.4 Report Download History (DONE):** ReportsTab in ClientDetail — download + admin delete. Deployed 2026-04-01.
 - **6.1 Monitoring Panel (DONE):** Sync KPIs, bar chart, data freshness per client. Deployed 2026-03-31.
 - **6.4 Error Boundary (DONE):** React error boundary with Serbian UI. Deployed 2026-03-31.
+- **PDF UTF-8 + Montserrat (DONE):** Embedded Montserrat font for Serbian diacritics in PDF reports. Removed toAscii() from text. Deployed 2026-04-01.
+- **AI Historical Comparison (DONE):** Worker fetches historical platform averages from Supabase RPC before Claude API call. Anomaly thresholds: >15% CTR/CPC, >30% CPM. Deployed 2026-04-01.
 
 ### FAZA 5 — Remaining
 - 2.1 Scheduled Report Generation (Edge Function + pg_cron)
