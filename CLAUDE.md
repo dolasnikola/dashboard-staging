@@ -22,7 +22,8 @@ Built with React 19, Vite 8, Tailwind CSS v4, Zustand for state management, reac
 - `cache.js` — In-memory `_cache` object + synchronous read functions (dbGetCampaignData, dbGetBudget, dbGetFlightDays, dbGetGA4Data, dbGetAllCampaignDataForPlatform, getHomepageSummary, getAlerts, getUnreadAlertCount, getSheetLinks, clearCache). Cache TTL 5min (`CACHE_TTL_MS`), LRU max 5 clients (`MAX_CACHED_CLIENTS`). Functions: `isClientCacheValid()`, `touchClient()`, `clearClientCache()`.
 - `db.js` — Async Supabase queries: fetchClients (with preferredOrder), prefetchClientData (per-client guard, loads campaign_data + budgets + flight_days + ga4 + local_display in parallel), fetchHomepageSummary (server-side aggregation via RPC + budgets + flight_days), fetchAlerts, dbSaveCampaignData (deduplication by aggregating before write), markAlertRead, markAllAlertsRead, dismissAlert, admin functions (dbGetAllUsers, dbUpdateUserRole, dbSetClientAccess), dbGetLastSync, runDiagnostics (exposed to window)
 - `pacing.js` — Budget pacing: `calcPacing(clientId, platform, month, actualSpend)`, `calcClientPacing()` aggregate, `PACING_STYLES` constants. Flight-days aware.
-- `data.js` — Constants (PLATFORM_NAMES, PLATFORM_BADGE, METRIC_LABELS, NLB_PRODUCTS), formatting (fmt, fmtMetric), CSV parsing (parseCSV, detectPlatform, mapRow)
+- `reportStorage.js` — Upload report PDF to Supabase Storage, clear AI narrative cache
+- `data.js` — Constants (PLATFORM_NAMES, PLATFORM_BADGE, METRIC_LABELS, NLB_PRODUCTS), formatting (fmt, fmtMetric), CSV parsing (parseCSV, detectPlatform, mapRow). Spend mapping prefers 'revenue' column for DV360.
 - `utils.js` — Date range helpers (getDateRangeBounds, getMonthsInRange, getCurrentMonth), filtering (getFilteredData), aggregation (aggregateByCampaign, groupByProduct), MoM comparison (getMoMChange returns object, not HTML), getDailyTotals
 - `sync.js` — Legacy Google Sheets sync (manual only via SheetsModal, no longer auto-called)
 
@@ -41,7 +42,7 @@ layout/Header.jsx           — Sticky header, AlertBell, role-based buttons
 home/HomePage.jsx           — Client cards grid with loading state
 home/ClientCard.jsx         — Card with metrics, budget bar, pacing badge
 home/LastSyncStatus.jsx     — Async last sync time from sync_log
-client/ClientDetail.jsx     — Route container, prefetchClientData on mount
+client/ClientDetail.jsx     — Route container, prefetchClientData on mount, admin-only report generation
 client/DateRangeBar.jsx     — Preset buttons + custom date inputs
 client/BudgetOverview.jsx   — Per-platform budget cards with pacing indicators
 client/PlatformTabs.jsx     — Overview + platform tab bar
@@ -58,13 +59,14 @@ admin/ReportBuilder.jsx     — Report config CRUD per client
 modals/ImportModal.jsx      — CSV drag-and-drop import
 modals/BudgetModal.jsx      — Monthly budget inputs per client/platform
 modals/SheetsModal.jsx      — Sheet URLs + manual sync
+modals/ReportApprovalModal.jsx — Admin approval dialog: preview PDF, approve (upload to Storage) or reject (clear AI cache)
 ui/AlertBell.jsx            — Notification bell with unread count + dropdown
 ui/Notification.jsx         — Toast notification from appStore
 ```
 
 ### Reports (`src/reports/`)
-- `generator.js` — Generic report engine: config-driven PDF with AI narratives via Cloudflare Worker
-- `pdf-utils.js` — Shared PDF utilities, jspdf-autotable, creative image cache
+- `generator.js` — Generic report engine: config-driven PDF with AI narratives via Cloudflare Worker. Two data paths: Sheets CSV (`collectReportData`) and DB aggregation (`collectReportDataFromDB`). Returns blob for admin approval instead of auto-downloading. Exports: `generateReport()`, `generateReportFromDB()`, `fetchReportConfig()`.
+- `pdf-utils.js` — Shared PDF utilities, jspdf-autotable, creative image cache. DV360 parser (`parseGDNRaw`) uses header-based column lookup with Revenue > Total Media Cost > Media Cost priority. Campaigns with <20 impressions filtered out.
 
 ### Cloudflare Worker (`worker/`)
 - `worker/src/index.js` — AI narrative generator using Claude API (claude-sonnet-4). Deploy: `cd worker && npx wrangler deploy`
@@ -90,7 +92,7 @@ GA4:         GA4 Data API → Apps Script → Supabase REST API (monthly)
 Gemius:      pg_cron → Edge Function "sync-gemius" → gDE API → Supabase
 Alerts:      pg_cron → Edge Function "check-alerts" → anomaly detection + pacing → alerts table
 ```
-Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still use Sheets.
+Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still use Sheets (A/B test with DB aggregation in progress).
 
 **On login flow:**
 1. `checkSession()` → `authStore.loadProfile()` → `appStore.initDashboard()`
@@ -117,7 +119,7 @@ Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still 
 | `local_display_dashboard` | Daily Local Display metrics from Gemius gDE API |
 | `local_display_report` | Monthly aggregated Local Display data |
 | `report_configs` | Per-client report configuration (platform_labels, sheet_urls, AI config) |
-| `report_history` | Generated report log |
+| `report_history` | Approved report log with pdf_url (Supabase Storage signed URLs) |
 | `meta_config` | Maps clients → Meta ad account IDs |
 | `gemius_config` | Maps clients → gDE API campaign IDs |
 | `alerts` | Budget pacing, metric anomaly, and sync failure alerts |
@@ -160,7 +162,8 @@ Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still 
 - Budgets show 0 until set via Budget modal
 - `sync_log` table has RLS — anon key returns empty array. Frontend reads via authenticated user session.
 - **sync-sheets data overwrite bug (fixed 2026-03-30):** Frontend auto-called `syncAllSheets()` on every load, overwriting direct-pipeline data. Fix: removed auto-sync + disabled sync-sheets pg_cron jobs.
-- **Google Ads lookback:** All accounts now use `lookback_days: 3` for conversion lag correction.
+- **Google Ads lookback:** NLB uses `lookback_days: 3` for conversion lag. Krka uses `lookback_days: 0` (no conversions). Both triggers moved to 7-8 AM (Google Ads API needs time to finalize previous day).
+- **Timezone bug in date filter (fixed 2026-04-01):** `getDateRangeBounds('last_month')` was dropping the last day of month because `new Date("YYYY-MM-DD")` parses as UTC midnight, exceeding local midnight boundary in CET/CEST. Fixed by setting `lmEnd` to 23:59:59.999.
 - TikTok API integration pending credentials (from FAZA 4E).
 
 ## Gotchas
@@ -174,6 +177,8 @@ Google Sheets eliminated from daily pipeline. Monthly Krka report scripts still 
 - **Report AI Worker CORS** — only allows Vercel production URL. Falls back to local text on localhost.
 - **Supabase CLI on Windows:** `npx supabase` conflicts with `supabase.js`. Use `supabase` directly or Supabase MCP.
 - **DV360 has insertion_order field** — UNIQUE constraints must account for it
+- **DV360 spend metric is Revenue** (includes agency markup), not Media Cost or Total Media Cost
+- **Report generator returns blob** — does NOT auto-download. Caller must handle via ReportApprovalModal.
 - **Always SELECT before DELETE/UPDATE** on production data
 
 ## FAZA 2: Automated Data Sync (Legacy — replaced by FAZA 4F)
@@ -201,6 +206,7 @@ Edge Function `sync-sheets` — now disabled but code kept for reference.
 - **FAZA 4D (DONE):** AI insights & alerts — budget pacing, anomaly detection, notification bell, check-alerts Edge Function. Deployed 2026-03-31.
 - **FAZA 4E (DONE):** Local Display — Gemius gDE API direct integration. Deployed 2026-03-27.
 - **FAZA 4F (DONE):** Direct data pipeline — Google Sheets eliminated. Meta/Gemius via Edge Functions, Google Ads/DV360/GA4 via Apps Scripts to Supabase. Deployed 2026-03-28.
+- **FAZA 4G (DONE):** Report approval workflow + DV360 Revenue metric + DB-based reports. Deployed 2026-04-01.
 - **FAZA 5:** See `plan.md` — White-label, automated reports, cross-platform analytics, real-time, TikTok/LinkedIn APIs, DevOps.
 
 ## FAZA 4D: AI Insights & Alerts (Deployed 2026-03-31)
@@ -255,4 +261,40 @@ pg_cron → Edge Function "sync-gemius" → gDE API (gdeapi.gemius.com) → Supa
 - All scripts: DELETE by filters + INSERT in batches of 500, `service_role` key in Script Properties
 - Google Ads lookback: last 3 days for conversion lag
 - DV360: exclude Farma/Pharm/Septolete, include only "krka terme"
-- Monthly Krka report scripts still write to Sheets (migration planned for FAZA 5)
+- Monthly Krka report scripts still write to Sheets (A/B test with DB aggregation in progress)
+
+## FAZA 4G: Report Approval Workflow + DV360 Revenue (Deployed 2026-04-01)
+
+### DV360 Revenue Metric
+- DV360 has three cost tiers: Media Cost < Total Media Cost < Revenue (includes agency markup)
+- Agency uses Revenue because Media House takes markup on DV360 campaigns
+- `pdf-utils.js` parser priority: Revenue > Total Media Cost > Media Cost > index 8
+- `data.js` CSV import: 'revenue' added to spend column search chain
+- Historical data backfilled in `campaign_data` table for all DV360 rows (Feb-Mar 2026)
+- Pharm/Farma/Septolete campaigns removed from DV360 data — only Terme campaigns remain
+
+### A/B Report Testing
+- Two report generation paths for comparison before fully migrating off Sheets:
+  - **Sheets path (A)**: `collectReportData()` — fetches CSV from Google Sheets URLs
+  - **DB path (B)**: `collectReportDataFromDB()` — aggregates directly from `campaign_data` table
+- DB path uses paginated fetch (1000 rows/page), supports DV360 campaign filter
+- Both produce identical `reportData` structure for the same PDF renderer
+- DB report filename has `_DB` suffix for easy comparison
+- Campaigns with <20 impressions filtered out in both paths
+
+### Report Approval Workflow
+- **Admin-only generation**: "Mesecni izvestaj" and "Izvestaj (DB)" buttons visible only to `admin` role
+- **Approval flow**: After PDF generation, admin sees `ReportApprovalModal`:
+  1. "Pregledaj PDF" — opens blob in new tab via `URL.createObjectURL()`
+  2. "Da, sacuvaj" — uploads to Supabase Storage, creates `report_history` row with `status='approved'`
+  3. "Ne, ponovo generisi" — clears AI narrative localStorage cache, admin can regenerate
+- **Supabase Storage**: Private `reports` bucket, folder structure `{client_id}/{report_month}/{filename}.pdf`
+  - RLS: admin can upload/delete, users with `has_client_access()` can download
+  - Signed URLs (1 year TTL) stored in `report_history.pdf_url`
+- **ReportsTab**: Shows only approved reports (`status='approved'`) with working "Preuzmi PDF" download links
+- **Account managers**: See ReportsTab with downloads but no generate buttons
+
+### Key Files
+- `src/lib/reportStorage.js` — `uploadReportPDF()` (Storage upload + signed URL + report_history insert), `clearAINarrativeCache()`
+- `src/components/modals/ReportApprovalModal.jsx` — Preview + approve/reject modal
+- `src/components/client/ReportsTab.jsx` — Approved reports list with download links
