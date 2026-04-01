@@ -150,7 +150,7 @@ async function fetchAINarratives(reportData) {
     }
   } catch (e) { localStorage.removeItem(cacheKey) }
 
-  // Fetch from AI worker with 55s timeout + 1 retry
+  // Fetch from AI worker with 90s timeout + 1 retry (Supabase historical fetch + Claude API)
   const payload = {
     clientId: reportData.clientId,
     clientName: reportData.client?.name || reportData.clientId,
@@ -174,7 +174,7 @@ async function fetchAINarratives(reportData) {
     try {
       console.log(`[AI] Calling worker (attempt ${attempt + 1}):`, workerUrl)
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 55000)
+      const timeoutId = setTimeout(() => controller.abort(), 90000)
 
       const response = await fetch(workerUrl, {
         method: 'POST',
@@ -196,7 +196,7 @@ async function fetchAINarratives(reportData) {
       return data.narratives
     } catch (err) {
       if (err.name === 'AbortError') {
-        console.warn(`[AI] Worker request timed out after 55s (attempt ${attempt + 1})`)
+        console.warn(`[AI] Worker request timed out after 90s (attempt ${attempt + 1})`)
       } else {
         console.error('[AI] Failed to fetch narratives:', err)
       }

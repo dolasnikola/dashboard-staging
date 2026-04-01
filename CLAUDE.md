@@ -207,7 +207,28 @@ Edge Function `sync-sheets` — now disabled but code kept for reference.
 - **FAZA 4E (DONE):** Local Display — Gemius gDE API direct integration. Deployed 2026-03-27.
 - **FAZA 4F (DONE):** Direct data pipeline — Google Sheets eliminated. Meta/Gemius via Edge Functions, Google Ads/DV360/GA4 via Apps Scripts to Supabase. Deployed 2026-03-28.
 - **FAZA 4G (DONE):** Report approval workflow + DV360 Revenue metric + DB-based reports. Deployed 2026-04-01.
-- **FAZA 5:** See `plan.md` — White-label, automated reports, cross-platform analytics, real-time, TikTok/LinkedIn APIs, DevOps.
+- **FAZA 5 (IN PROGRESS):** See `plan.md` for full details. Completed items below.
+
+### FAZA 5 — Completed
+- **5.3 DevOps Basics (DONE):** Vitest + 80 unit tests + GitHub Actions CI. Deployed 2026-03-31.
+- **5.4 Sync Status Indicator (DONE):** Live green/orange/red dot in Header, 5min refresh. Deployed 2026-03-31.
+- **5.5 Cross-Platform Comparison (DONE):** Per-platform metrics table + bar chart in OverviewTab. Deployed 2026-03-31.
+- **5.7 Unified Funnel (DONE):** Impressions→Clicks→Conversions funnel + stacked bar in OverviewTab. Deployed 2026-03-31.
+- **5.8 White-label Branding (DONE, frontend):** BrandingProvider + dynamic CSS vars. Needs DB migration to activate.
+- **2.4 Report Download History (DONE):** ReportsTab in ClientDetail — download + admin delete. Deployed 2026-04-01.
+- **6.1 Monitoring Panel (DONE):** Sync KPIs, bar chart, data freshness per client. Deployed 2026-03-31.
+- **6.4 Error Boundary (DONE):** React error boundary with Serbian UI. Deployed 2026-03-31.
+
+### FAZA 5 — Remaining
+- 2.1 Scheduled Report Generation (Edge Function + pg_cron)
+- 2.2 Email Delivery (needs Resend/SendGrid API key)
+- 2.3 Krka Scripts Migration (A/B test in progress)
+- 3.3 Custom Dashboards (drag & drop widget grid)
+- 4.1 Supabase Realtime subscriptions
+- 5.1 TikTok API (pending credentials)
+- 5.2 LinkedIn API (pending B2B clients)
+- 5.3 Data Warehouse (materialized views, partitioning)
+- 1.1 Branding DB migration (`ALTER TABLE clients ADD COLUMN branding JSONB`)
 
 ## FAZA 4D: AI Insights & Alerts (Deployed 2026-03-31)
 
