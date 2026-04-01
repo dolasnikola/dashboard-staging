@@ -554,18 +554,25 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
     doc.text(reportData.client.name, pw / 2, thanksTextY + 12, { align: 'center' })
     doc.text(`${reportData.monthLabel}.`, pw / 2, thanksTextY + 22, { align: 'center' })
 
-    // Save
+    // Return blob + metadata for approval workflow
     const clientSlug = toAscii(reportData.client.name).replace(/[^a-zA-Z0-9]/g, '_')
     const monthEn = getMonthNameEn(reportData.reportMonth)
     const [fYear] = reportData.reportMonth.split('-')
     const suffix = fromDB ? '_DB' : ''
     const filename = `${clientSlug}-Monthly_Report_${monthEn}_${fYear}${suffix}.pdf`
-    doc.save(filename)
-    notify(`Izvestaj preuzet: ${filename}`)
+
+    return {
+      blob: doc.output('blob'),
+      filename,
+      clientId: reportData.clientId,
+      reportMonth: reportData.reportMonth,
+      reportConfigId: config.id
+    }
 
   } catch (err) {
     console.error('Report generation error:', err)
     notify('Greska pri generisanju izvestaja: ' + err.message, 'warning')
+    return null
   }
 }
 

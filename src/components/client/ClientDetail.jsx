@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAppStore } from '../../stores/appStore'
+import { useAuthStore } from '../../stores/authStore'
 import { prefetchClientData } from '../../lib/db'
 import DateRangeBar from './DateRangeBar'
 import BudgetOverview from './BudgetOverview'
@@ -10,6 +11,7 @@ import PlatformView from './PlatformView'
 import GA4View from './GA4View'
 import LocalDisplayView from './LocalDisplayView'
 import ReportsTab from './ReportsTab'
+import ReportApprovalModal from '../modals/ReportApprovalModal'
 import { PLATFORM_NAMES, PLATFORM_BADGE } from '../../lib/data'
 
 export default function ClientDetail() {
@@ -22,6 +24,9 @@ export default function ClientDetail() {
   const [hasReportConfig, setHasReportConfig] = useState(false)
   const [reportStatus, setReportStatus] = useState(null) // null | 'loading' | string
   const [dbReportStatus, setDbReportStatus] = useState(null)
+  const [pendingReport, setPendingReport] = useState(null)
+  const currentUserRole = useAuthStore(s => s.currentUserRole)
+  const isAdmin = currentUserRole === 'admin'
 
   useEffect(() => {
     if (!client) return
@@ -74,15 +79,16 @@ export default function ClientDetail() {
               }}>
                 {client.currency}
               </span>
-              {hasReportConfig && (
+              {hasReportConfig && isAdmin && (
                 <>
                   <button className="btn btn-primary"
                     disabled={!!reportStatus || !!dbReportStatus}
                     onClick={async () => {
                       setReportStatus('Ucitavanje...')
                       const { generateReport } = await import('../../reports/generator')
-                      await generateReport(clientId, null, (msg) => setReportStatus(msg))
+                      const result = await generateReport(clientId, null, (msg) => setReportStatus(msg))
                       setReportStatus(null)
+                      if (result) setPendingReport(result)
                     }}
                     style={reportStatus ? { opacity: 0.7, cursor: 'wait' } : {}}>
                     {reportStatus || 'Mesecni izvestaj'}
@@ -92,8 +98,9 @@ export default function ClientDetail() {
                     onClick={async () => {
                       setDbReportStatus('Ucitavanje...')
                       const { generateReportFromDB } = await import('../../reports/generator')
-                      await generateReportFromDB(clientId, null, (msg) => setDbReportStatus(msg))
+                      const result = await generateReportFromDB(clientId, null, (msg) => setDbReportStatus(msg))
                       setDbReportStatus(null)
+                      if (result) setPendingReport(result)
                     }}
                     style={dbReportStatus ? { opacity: 0.7, cursor: 'wait' } : { border: '1px solid var(--color-accent)' }}>
                     {dbReportStatus || 'Izvestaj (DB)'}
@@ -140,6 +147,13 @@ export default function ClientDetail() {
             <PlatformView clientId={clientId} client={client} platform={activePlatform} />
           )}
         </>
+      )}
+
+      {pendingReport && (
+        <ReportApprovalModal
+          {...pendingReport}
+          onClose={(saved) => setPendingReport(null)}
+        />
       )}
     </div>
   )

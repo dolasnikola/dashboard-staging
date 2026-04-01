@@ -17,12 +17,13 @@ export default function ReportsTab({ clientId, client }) {
       .from('report_history')
       .select('*')
       .eq('client_id', clientId)
-      .order('created_at', { ascending: false })
+      .eq('status', 'approved')
+      .order('generated_at', { ascending: false })
       .limit(50)
 
     if (error) {
       console.error('[ReportsTab] error:', error.message)
-      notify('Greška pri učitavanju izveštaja', 'error')
+      notify('Greska pri ucitavanju izvestaja', 'error')
       setReports([])
     } else {
       setReports(data || [])
@@ -31,7 +32,7 @@ export default function ReportsTab({ clientId, client }) {
   }
 
   if (loading) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-secondary)' }}>Učitavanje izveštaja...</div>
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-secondary)' }}>Ucitavanje izvestaja...</div>
   }
 
   if (reports.length === 0) {
@@ -42,8 +43,8 @@ export default function ReportsTab({ clientId, client }) {
         borderRadius: 'var(--radius-default)', boxShadow: 'var(--shadow-default)'
       }}>
         <div style={{ fontSize: 32, marginBottom: 12 }}>📄</div>
-        <div style={{ fontSize: 15, fontWeight: 500 }}>Nema generisanih izveštaja</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>Izveštaji će se pojaviti ovde nakon generisanja.</div>
+        <div style={{ fontSize: 15, fontWeight: 500 }}>Nema odobrenih izvestaja</div>
+        <div style={{ fontSize: 13, marginTop: 6 }}>Izvestaji ce se pojaviti ovde nakon sto ih admin odobri.</div>
       </div>
     )
   }
@@ -52,8 +53,7 @@ export default function ReportsTab({ clientId, client }) {
     <div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {reports.map(report => {
-          const date = new Date(report.created_at)
-          const statusColor = report.status === 'success' ? '#16a34a' : report.status === 'error' ? '#dc2626' : '#d97706'
+          const date = new Date(report.generated_at)
 
           return (
             <div key={report.id} style={{
@@ -65,13 +65,13 @@ export default function ReportsTab({ clientId, client }) {
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontWeight: 600, fontSize: 14 }}>
-                    {report.report_month || report.title || 'Izveštaj'}
+                    {report.report_month}
                   </span>
                   <span style={{
                     fontSize: 10, padding: '2px 8px', borderRadius: 4,
-                    background: `${statusColor}15`, color: statusColor, fontWeight: 600, textTransform: 'uppercase'
+                    background: '#16a34a15', color: '#16a34a', fontWeight: 600, textTransform: 'uppercase'
                   }}>
-                    {report.status === 'success' ? 'Uspešno' : report.status === 'error' ? 'Greška' : report.status}
+                    Odobreno
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
@@ -82,8 +82,8 @@ export default function ReportsTab({ clientId, client }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                {report.file_url && (
-                  <a href={report.file_url} target="_blank" rel="noopener noreferrer"
+                {report.pdf_url && (
+                  <a href={report.pdf_url} target="_blank" rel="noopener noreferrer"
                     className="btn" style={{ padding: '6px 14px', fontSize: 12, textDecoration: 'none' }}>
                     Preuzmi PDF
                   </a>
