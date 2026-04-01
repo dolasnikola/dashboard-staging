@@ -207,8 +207,117 @@ async function fetchAINarratives(reportData) {
   return null
 }
 
+// ============== DB-BASED DATA COLLECTION ==============
+async function collectReportDataFromDB(config) {
+  const clients = useAppStore.getState().clients
+  const client = clients[config.client_id]
+  const reportMonth = getReportMonth()
+  const platformLabels = config.platform_labels || {}
+  const metricCols = config.metric_cols || {}
+
+  const PLATFORM_MAP = {
+    google_ads: 'google_ads',
+    meta: 'meta',
+    dv360: 'dv360'
+  }
+
+  const platforms = {}
+
+  for (const [platKey, label] of Object.entries(platformLabels)) {
+    if (platKey === 'local_display') {
+      // Query local_display_dashboard table
+      const { data, error } = await sb.from('local_display_dashboard')
+        .select('placement, impressions, clicks, ctr')
+        .eq('client_id', config.client_id)
+        .gte('date', `${reportMonth}-01`)
+        .lte('date', `${reportMonth}-31`)
+      if (error) { console.error('[DB Report] local_display error:', error.message); continue }
+
+      const placementAgg = {}
+      for (const r of (data || [])) {
+        const key = r.placement || ''
+        if (!placementAgg[key]) placementAgg[key] = { campaign: key, impressions: 0, clicks: 0, spend: 0 }
+        placementAgg[key].impressions += Number(r.impressions) || 0
+        placementAgg[key].clicks += Number(r.clicks) || 0
+      }
+      const ldCampaigns = Object.values(placementAgg).map(d => ({
+        ...d,
+        ctr: d.impressions > 0 ? d.clicks / d.impressions * 100 : 0
+      })).sort((a, b) => b.impressions - a.impressions)
+
+      platforms.local_display = { campaigns: ldCampaigns, totals: sumTotals(ldCampaigns) }
+      continue
+    }
+
+    const dbPlatform = PLATFORM_MAP[platKey]
+    if (!dbPlatform) continue
+
+    // Paginated fetch (Supabase default limit 1000)
+    let allRows = []
+    let from = 0
+    const PAGE_SIZE = 1000
+    while (true) {
+      const { data, error } = await sb.from('campaign_data')
+        .select('campaign, insertion_order, impressions, clicks, spend, reach')
+        .eq('client_id', config.client_id)
+        .eq('platform', dbPlatform)
+        .eq('month', reportMonth)
+        .range(from, from + PAGE_SIZE - 1)
+      if (error) { console.error(`[DB Report] ${platKey} error:`, error.message); break }
+      allRows = allRows.concat(data || [])
+      if (!data || data.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
+
+    // DV360: apply campaign filter
+    let filtered = allRows
+    if (platKey === 'dv360' && config.gdn_campaign_filter) {
+      filtered = allRows.filter(r => r.campaign && r.campaign.indexOf(config.gdn_campaign_filter) !== -1)
+    }
+
+    // Aggregate by campaign
+    const campaignAgg = aggregateDBRows(filtered, 'campaign')
+
+    if (platKey === 'dv360') {
+      const ioAgg = aggregateDBRows(filtered, 'insertion_order')
+      const totalSource = ioAgg.length > 0 ? ioAgg : campaignAgg
+      platforms.dv360 = { campaigns: campaignAgg, insertionOrders: ioAgg, totals: sumTotals(totalSource) }
+    } else {
+      platforms[platKey] = { campaigns: campaignAgg, totals: sumTotals(campaignAgg) }
+    }
+  }
+
+  return {
+    client,
+    clientId: config.client_id,
+    reportMonth,
+    monthLabel: getMonthLabelCapital(reportMonth),
+    platforms,
+    platformLabels,
+    metricCols,
+    config
+  }
+}
+
+function aggregateDBRows(rows, groupByField) {
+  const agg = {}
+  for (const r of rows) {
+    const key = r[groupByField] || ''
+    if (!agg[key]) agg[key] = { campaign: key, impressions: 0, clicks: 0, spend: 0, reach: 0 }
+    agg[key].impressions += Number(r.impressions) || 0
+    agg[key].clicks += Number(r.clicks) || 0
+    agg[key].spend += Number(r.spend) || 0
+    agg[key].reach += Number(r.reach) || 0
+  }
+  return Object.values(agg).map(d => ({
+    ...d,
+    ctr: d.impressions > 0 ? d.clicks / d.impressions * 100 : 0,
+    cpm: d.impressions > 0 ? d.spend / d.impressions * 1000 : 0
+  })).sort((a, b) => b.impressions - a.impressions)
+}
+
 // ============== MAIN GENERATE ==============
-export async function generateReport(clientId, onNotify, onProgress) {
+export async function generateReport(clientId, onNotify, onProgress, fromDB = false) {
   const notify = onNotify || useAppStore.getState().notify
 
   try {
@@ -221,7 +330,9 @@ export async function generateReport(clientId, onNotify, onProgress) {
     await new Promise(r => setTimeout(r, 1500)) // Wait for images to load
 
     if (onProgress) onProgress('Ucitavanje podataka...')
-    const reportData = await collectReportData(config)
+    const reportData = fromDB
+      ? await collectReportDataFromDB(config)
+      : await collectReportData(config)
 
     if (onProgress) onProgress('AI generise tekst...')
     const aiNarratives = await fetchAINarratives(reportData)
@@ -446,7 +557,8 @@ export async function generateReport(clientId, onNotify, onProgress) {
     const clientSlug = toAscii(reportData.client.name).replace(/[^a-zA-Z0-9]/g, '_')
     const monthEn = getMonthNameEn(reportData.reportMonth)
     const [fYear] = reportData.reportMonth.split('-')
-    const filename = `${clientSlug}-Monthly_Report_${monthEn}_${fYear}.pdf`
+    const suffix = fromDB ? '_DB' : ''
+    const filename = `${clientSlug}-Monthly_Report_${monthEn}_${fYear}${suffix}.pdf`
     doc.save(filename)
     notify(`Izvestaj preuzet: ${filename}`)
 
@@ -454,4 +566,9 @@ export async function generateReport(clientId, onNotify, onProgress) {
     console.error('Report generation error:', err)
     notify('Greska pri generisanju izvestaja: ' + err.message, 'warning')
   }
+}
+
+// ============== DB-BASED REPORT GENERATE ==============
+export async function generateReportFromDB(clientId, onNotify, onProgress) {
+  return generateReport(clientId, onNotify, onProgress, true)
 }

@@ -21,6 +21,7 @@ export default function ClientDetail() {
   const [activePlatform, setActivePlatform] = useState(null)
   const [hasReportConfig, setHasReportConfig] = useState(false)
   const [reportStatus, setReportStatus] = useState(null) // null | 'loading' | string
+  const [dbReportStatus, setDbReportStatus] = useState(null)
 
   useEffect(() => {
     if (!client) return
@@ -74,17 +75,30 @@ export default function ClientDetail() {
                 {client.currency}
               </span>
               {hasReportConfig && (
-                <button className="btn btn-primary"
-                  disabled={!!reportStatus}
-                  onClick={async () => {
-                    setReportStatus('Ucitavanje...')
-                    const { generateReport } = await import('../../reports/generator')
-                    await generateReport(clientId, null, (msg) => setReportStatus(msg))
-                    setReportStatus(null)
-                  }}
-                  style={reportStatus ? { opacity: 0.7, cursor: 'wait' } : {}}>
-                  {reportStatus || 'Mesecni izvestaj'}
-                </button>
+                <>
+                  <button className="btn btn-primary"
+                    disabled={!!reportStatus || !!dbReportStatus}
+                    onClick={async () => {
+                      setReportStatus('Ucitavanje...')
+                      const { generateReport } = await import('../../reports/generator')
+                      await generateReport(clientId, null, (msg) => setReportStatus(msg))
+                      setReportStatus(null)
+                    }}
+                    style={reportStatus ? { opacity: 0.7, cursor: 'wait' } : {}}>
+                    {reportStatus || 'Mesecni izvestaj'}
+                  </button>
+                  <button className="btn"
+                    disabled={!!reportStatus || !!dbReportStatus}
+                    onClick={async () => {
+                      setDbReportStatus('Ucitavanje...')
+                      const { generateReportFromDB } = await import('../../reports/generator')
+                      await generateReportFromDB(clientId, null, (msg) => setDbReportStatus(msg))
+                      setDbReportStatus(null)
+                    }}
+                    style={dbReportStatus ? { opacity: 0.7, cursor: 'wait' } : { border: '1px solid var(--color-accent)' }}>
+                    {dbReportStatus || 'Izvestaj (DB)'}
+                  </button>
+                </>
               )}
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
