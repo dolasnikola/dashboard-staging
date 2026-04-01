@@ -13,9 +13,15 @@ export default function SyncStatusIndicator() {
   }, [])
 
   const loadSync = async () => {
-    const data = await dbGetLastSync()
-    setSyncInfo(data)
-    setLoading(false)
+    try {
+      const data = await dbGetLastSync()
+      setSyncInfo(data)
+    } catch (err) {
+      console.error('[SyncStatusIndicator] error:', err.message)
+      setSyncInfo(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (loading) return null

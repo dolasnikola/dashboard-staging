@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { sb } from '../../lib/supabase'
+import { useAppStore } from '../../stores/appStore'
 
 export default function ReportsTab({ clientId, client }) {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
+  const notify = useAppStore(s => s.notify)
 
   useEffect(() => {
     loadReports()
@@ -20,6 +22,7 @@ export default function ReportsTab({ clientId, client }) {
 
     if (error) {
       console.error('[ReportsTab] error:', error.message)
+      notify('Greška pri učitavanju izveštaja', 'error')
       setReports([])
     } else {
       setReports(data || [])

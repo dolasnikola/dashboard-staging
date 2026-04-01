@@ -13,14 +13,16 @@ export function getBranding(client) {
   return { ...DEFAULT_BRANDING, ...client.branding }
 }
 
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/
+
 export function applyBranding(branding) {
   const root = document.documentElement
-  if (branding.primary_color) {
+  if (branding.primary_color && HEX_RE.test(branding.primary_color)) {
     root.style.setProperty('--color-accent', branding.primary_color)
     root.style.setProperty('--color-accent-light', branding.primary_color + '18')
     root.style.setProperty('--color-accent-muted', branding.primary_color + '12')
   }
-  if (branding.font_family) {
+  if (branding.font_family && typeof branding.font_family === 'string') {
     root.style.setProperty('--font-display', branding.font_family)
   }
 }

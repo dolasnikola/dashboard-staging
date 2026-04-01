@@ -74,7 +74,7 @@ export default function MonitoringPanel() {
 
     // Data freshness per client
     const freshness = {}
-    const clientIds = Object.keys(clients)
+    const clientIds = Object.keys(clients || {})
     clientIds.forEach(cid => {
       const clientLogs = syncLogs.filter(l =>
         l.client_id === cid && l.status === 'success'
@@ -103,7 +103,7 @@ export default function MonitoringPanel() {
     ]
   }
 
-  const clientIds = Object.keys(clients)
+  const clientIds = Object.keys(clients || {})
 
   return (
     <div>
