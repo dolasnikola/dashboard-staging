@@ -11,7 +11,7 @@ export function getDateRangeBounds(activeDateRange, customDateFrom, customDateTo
       return { from: new Date(y, m, 1), to: today, month: `${y}-${String(m + 1).padStart(2, '0')}` }
     case 'last_month': {
       const lm = new Date(y, m - 1, 1)
-      const lmEnd = new Date(y, m, 0)
+      const lmEnd = new Date(y, m, 0, 23, 59, 59, 999)
       return { from: lm, to: lmEnd, month: `${lm.getFullYear()}-${String(lm.getMonth() + 1).padStart(2, '0')}` }
     }
     case 'yesterday': {
