@@ -291,10 +291,11 @@ pg_cron → Edge Function "sync-gemius" → gDE API (gdeapi.gemius.com) → Supa
 - **Supabase Storage**: Private `reports` bucket, folder structure `{client_id}/{report_month}/{filename}.pdf`
   - RLS: admin can upload/delete, users with `has_client_access()` can download
   - Signed URLs (1 year TTL) stored in `report_history.pdf_url`
-- **ReportsTab**: Shows only approved reports (`status='approved'`) with working "Preuzmi PDF" download links
+- **ReportsTab**: Shows approved reports with "Preuzmi PDF" download links. Admin can delete reports ("Obrisi" button — removes from Storage + report_history).
+- **Alert on approval**: When admin approves a report, an `alert` (type `report_ready`) is created for all users with client access
 - **Account managers**: See ReportsTab with downloads but no generate buttons
 
 ### Key Files
-- `src/lib/reportStorage.js` — `uploadReportPDF()` (Storage upload + signed URL + report_history insert), `clearAINarrativeCache()`
+- `src/lib/reportStorage.js` — `uploadReportPDF()` (Storage upload + signed URL + report_history insert + alert notification), `clearAINarrativeCache()`
 - `src/components/modals/ReportApprovalModal.jsx` — Preview + approve/reject modal
-- `src/components/client/ReportsTab.jsx` — Approved reports list with download links
+- `src/components/client/ReportsTab.jsx` — Approved reports list with download links + admin delete button

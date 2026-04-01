@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { sb } from '../../lib/supabase'
 import { useAppStore } from '../../stores/appStore'
+import { useAuthStore } from '../../stores/authStore'
 
 export default function ReportsTab({ clientId, client }) {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const notify = useAppStore(s => s.notify)
+  const isAdmin = useAuthStore(s => s.currentUserRole) === 'admin'
 
   useEffect(() => {
     loadReports()
@@ -29,6 +31,20 @@ export default function ReportsTab({ clientId, client }) {
       setReports(data || [])
     }
     setLoading(false)
+  }
+
+  const handleDelete = async (report) => {
+    if (!confirm('Obrisati ovaj izvestaj?')) return
+    // Delete from Storage — extract path from signed URL
+    try {
+      const urlPath = new URL(report.pdf_url).pathname
+      const storagePath = decodeURIComponent(urlPath.split('/object/sign/reports/')[1]?.split('?')[0] || '')
+      if (storagePath) await sb.storage.from('reports').remove([storagePath])
+    } catch (e) { console.warn('[ReportsTab] storage delete:', e.message) }
+    // Delete from report_history
+    await sb.from('report_history').delete().eq('id', report.id)
+    notify('Izvestaj obrisan')
+    loadReports()
   }
 
   if (loading) {
@@ -87,6 +103,14 @@ export default function ReportsTab({ clientId, client }) {
                     className="btn" style={{ padding: '6px 14px', fontSize: 12, textDecoration: 'none' }}>
                     Preuzmi PDF
                   </a>
+                )}
+                {isAdmin && (
+                  <button className="btn" onClick={() => handleDelete(report)} style={{
+                    padding: '6px 14px', fontSize: 12,
+                    color: '#dc2626', borderColor: '#dc262630'
+                  }}>
+                    Obrisi
+                  </button>
                 )}
               </div>
             </div>
