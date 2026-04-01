@@ -158,8 +158,8 @@ function parseGDNRaw(rows, campaignFilter) {
   const iImpressions = colIdx('impressions') !== -1 ? colIdx('impressions') : 4
   const iReach = colIdx('total reach') !== -1 ? colIdx('total reach') : 5
   const iClicks = colIdx('clicks') !== -1 ? colIdx('clicks') : 6
-  // Prefer "Total Media Cost" / "Total Cost" over "Media Cost" for spend including platform fees
-  const iCost = colIdx('total media cost') !== -1 ? colIdx('total media cost') : (colIdx('total cost') !== -1 ? colIdx('total cost') : (colIdx('media cost') !== -1 ? colIdx('media cost') : 8))
+  // Prefer Revenue (includes agency markup) > Total Media Cost > Media Cost
+  const iCost = colIdx('revenue') !== -1 ? colIdx('revenue') : (colIdx('total media cost') !== -1 ? colIdx('total media cost') : (colIdx('media cost') !== -1 ? colIdx('media cost') : 8))
 
   const campaignAgg = {}
   const ioAgg = {}

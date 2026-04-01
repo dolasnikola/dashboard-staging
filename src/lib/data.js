@@ -113,7 +113,7 @@ export function mapRow(platform, row) {
   r.date = get('reporting starts', 'reporting start', 'day', 'date', 'Date', 'Day') || ''
   r.impressions = parseNum(get('impressions', 'impr.', 'impr'))
   r.clicks = parseNum(get('clicks (all)', 'clicks', 'link clicks'))
-  r.spend = parseNum(get('amount spent', 'spend', 'cost', 'total cost'))
+  r.spend = parseNum(get('amount spent', 'spend', 'revenue', 'cost', 'total cost'))
   r.reach = parseNum(get('reach'))
   r.conversions = parseNum(get('results', 'conversions', 'total conversions', 'conv.'))
   r.conv_value = parseNum(get('conversion value', 'conv. value', 'total conversion value', 'results value'))
