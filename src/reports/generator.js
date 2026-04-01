@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { applyPlugin } from 'jspdf-autotable'
 applyPlugin(jsPDF)
+import { registerFonts } from './fonts/register'
 import { useAppStore } from '../stores/appStore'
 import { sb } from '../lib/supabase'
 import {
@@ -92,7 +93,7 @@ function generateExecutiveSummary(reportData) {
   platformKeys.forEach(p => { totalSpend += reportData.platforms[p].totals.spend || 0 })
   text += `\nKombinovano, svi kanali su obezbedili balans izmedju volumena, vidljivosti i relevantnog saobracaja, uz ukupno ulaganje od ${fmtEur(totalSpend)}.`
 
-  return toAscii(text)
+  return text
 }
 
 function generatePlatformNarrative(platform, data, reportData) {
@@ -116,7 +117,7 @@ function generatePlatformNarrative(platform, data, reportData) {
   text += `\nUkupno je ostvareno ${fmtNum(t.clicks)} klikova, uz prosecan CTR od ${t.ctr.toFixed(2)}%.`
   text += `\nSa ukupnim ulaganjem od ${fmtEur(t.spend)}, kampanje su nesmetano emitovane tokom ${reportData.monthLabel.toLowerCase()}a.`
 
-  return toAscii(text)
+  return text
 }
 
 // ============== AI NARRATIVES ==============
@@ -340,6 +341,7 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
     if (onProgress) onProgress(aiNarratives ? 'Kreiranje PDF-a...' : 'Kreiranje PDF-a (fallback)...')
 
     const doc = new jsPDF('l', 'mm', 'a4')
+    registerFonts(doc)
     const pw = 297, ph = 210, margin = 20
     const cw = pw - 2 * margin
     const cc = config.creatives_config || {}
@@ -363,18 +365,18 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
     const textAreaW = pw - margin - textAreaLeft
     const textCenterX = textAreaLeft + textAreaW / 2
 
-    doc.setFont('times', 'bold')
+    doc.setFont('Montserrat', 'bold')
     doc.setFontSize(26)
     doc.setTextColor(30, 30, 30)
     const titleLines = doc.splitTextToSize(reportData.client.name, textAreaW - 5)
     let ty = ph / 2 - 15
     titleLines.forEach(l => { doc.text(l, textCenterX, ty, { align: 'center' }); ty += 10 })
 
-    doc.setFont('times', 'italic')
+    doc.setFont('Montserrat', 'italic')
     doc.setFontSize(16)
     doc.text('Digital oglasavanje', textCenterX, ty + 2, { align: 'center' })
 
-    doc.setFont('times', 'bold')
+    doc.setFont('Montserrat', 'bold')
     doc.setFontSize(18)
     doc.text(`${reportData.monthLabel}.`, textCenterX, ty + 13, { align: 'center' })
 
@@ -383,17 +385,17 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
     pdfDrawBg(doc, pw, ph)
     let y = margin + 5
 
-    const summaryText = aiNarratives ? toAscii(aiNarratives.executiveSummary) : generateExecutiveSummary(reportData)
+    const summaryText = aiNarratives ? aiNarratives.executiveSummary : generateExecutiveSummary(reportData)
 
     summaryText.split('\n').forEach(line => {
       if (line.trim() === '') { y += 3; return }
       if (line.startsWith('- ')) {
-        doc.setFont('times', 'normal')
+        doc.setFont('Montserrat', 'normal')
         doc.setFontSize(11)
         doc.text(line, margin, y)
         y += 5.5
       } else {
-        doc.setFont('times', 'normal')
+        doc.setFont('Montserrat', 'normal')
         doc.setFontSize(11)
         const wrapped = doc.splitTextToSize(line, cw)
         wrapped.forEach(wl => {
@@ -430,7 +432,7 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
       if (!colConfig) continue
 
       // Title
-      doc.setFont('times', 'bold')
+      doc.setFont('Montserrat', 'bold')
       doc.setFontSize(14)
       doc.setTextColor(30, 30, 30)
       doc.text(`${platName} ${reportData.monthLabel}.`, margin, y + 6)
@@ -440,7 +442,7 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
       const lastDay = new Date(ry, rm, 0).getDate()
       const dateStr = `${reportData.reportMonth.replace('-', '/')}/01 - ${reportData.reportMonth.replace('-', '/')}/${String(lastDay).padStart(2, '0')}`
       doc.setFontSize(8)
-      doc.setFont('times', 'normal')
+      doc.setFont('Montserrat', 'normal')
       const dateW = doc.getTextWidth(dateStr) + 10
       doc.setFillColor(240, 200, 0)
       doc.roundedRect(pw - margin - dateW, y - 2, dateW, 12, 3, 3, 'F')
@@ -453,7 +455,7 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
       const headLabels = cols.map(c => c === 'campaign' ? colConfig.label : (REPORT_COL_LABELS[c] || c))
 
       const tableBody = data.campaigns.map(row => cols.map(c => {
-        if (c === 'campaign') return toAscii(row.campaign || '')
+        if (c === 'campaign') return row.campaign || ''
         return fmtTableVal(c, row[c])
       }))
       if (platform !== 'dv360') {
@@ -478,7 +480,7 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
           ioTotals.ctr = ioTotals.impressions > 0 ? ioTotals.clicks / ioTotals.impressions * 100 : 0
           ioTotals.cpm = ioTotals.impressions > 0 ? ioTotals.spend / ioTotals.impressions * 1000 : 0
 
-          const ioBody = data.insertionOrders.map(row => ioCols.map(c => c === 'campaign' ? toAscii(row.campaign || '') : fmtTableVal(c, row[c])))
+          const ioBody = data.insertionOrders.map(row => ioCols.map(c => c === 'campaign' ? (row.campaign || '') : fmtTableVal(c, row[c])))
           ioBody.push(ioCols.map(c => c === 'campaign' ? 'Total' : fmtTableVal(c, ioTotals[c])))
 
           y = pdfRenderTable(doc, ioHeadLabels, ioBody, y, margin)
@@ -489,11 +491,11 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
 
       // Narrative
       const narrative = aiNarratives && aiNarratives[platform]
-        ? toAscii(aiNarratives[platform])
+        ? aiNarratives[platform]
         : generatePlatformNarrative(platform, data, reportData)
       narrative.split('\n').forEach(line => {
         if (line.trim() === '') { y += 1; return }
-        doc.setFont('times', 'normal')
+        doc.setFont('Montserrat', 'normal')
         doc.setFontSize(10)
         doc.setTextColor(30, 30, 30)
         const wrapped = doc.splitTextToSize(line, cw)
@@ -544,11 +546,11 @@ export async function generateReport(clientId, onNotify, onProgress, fromDB = fa
     }
 
     const thanksTextY = hasThanksImg ? 10 + thanksConfig.h + 25 : ph / 2 - 15
-    doc.setFont('times', 'bold')
+    doc.setFont('Montserrat', 'bold')
     doc.setFontSize(36)
     doc.setTextColor(30, 30, 30)
     doc.text('HVALA!', pw / 2, thanksTextY, { align: 'center' })
-    doc.setFont('times', 'normal')
+    doc.setFont('Montserrat', 'normal')
     doc.setFontSize(12)
     doc.setTextColor(100, 100, 100)
     doc.text(reportData.client.name, pw / 2, thanksTextY + 12, { align: 'center' })

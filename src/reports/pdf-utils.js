@@ -35,7 +35,7 @@ export function fmtEur(val) {
 }
 
 export function fmtTableVal(col, val) {
-  if (col === 'campaign') return toAscii(val || '')
+  if (col === 'campaign') return val || ''
   if (col === 'impressions' || col === 'clicks' || col === 'reach') return fmtNum(val)
   if (col === 'ctr') return (val || 0).toFixed(2) + '%'
   if (col === 'cpm') return fmtEur(val)
@@ -308,7 +308,7 @@ export function pdfRenderTable(doc, headLabels, tableBody, y, margin) {
     body: tableBody,
     margin: { left: margin, right: margin },
     columnStyles: colStyles,
-    styles: { fontSize: 9, cellPadding: 3, font: 'times', textColor: [30, 30, 30], lineColor: [200, 195, 185], lineWidth: 0.3 },
+    styles: { fontSize: 9, cellPadding: 3, font: 'Montserrat', textColor: [30, 30, 30], lineColor: [200, 195, 185], lineWidth: 0.3 },
     headStyles: { fillColor: [240, 200, 0], textColor: [30, 30, 30], fontStyle: 'bold', lineWidth: 0 },
     bodyStyles: { fillColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [248, 245, 240] },
