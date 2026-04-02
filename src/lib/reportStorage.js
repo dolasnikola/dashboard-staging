@@ -1,32 +1,25 @@
-import { sb } from './supabase'
+import { storageUpload, storageCreateSignedUrl, apiGetUser, dbInsert } from './api'
 
 export async function uploadReportPDF(blob, clientId, reportMonth, filename, reportConfigId, clientName) {
   const storagePath = `${clientId}/${reportMonth}/${filename}`
 
-  const { error: uploadError } = await sb.storage
-    .from('reports')
-    .upload(storagePath, blob, {
-      contentType: 'application/pdf',
-      upsert: true
-    })
+  const { error: uploadError } = await storageUpload('reports', storagePath, blob, 'application/pdf')
 
   if (uploadError) {
     console.error('[uploadReportPDF] upload error:', uploadError.message)
     return null
   }
 
-  const { data: urlData, error: urlError } = await sb.storage
-    .from('reports')
-    .createSignedUrl(storagePath, 31536000)
+  const { data: urlData, error: urlError } = await storageCreateSignedUrl('reports', storagePath, 31536000)
 
   if (urlError) {
     console.error('[uploadReportPDF] signedUrl error:', urlError.message)
     return null
   }
 
-  const { data: { user } } = await sb.auth.getUser()
+  const user = await apiGetUser()
 
-  const { error: dbError } = await sb.from('report_history').insert({
+  const { error: dbError } = await dbInsert('report_history', {
     client_id: clientId,
     report_config_id: reportConfigId,
     report_month: reportMonth,
@@ -40,13 +33,12 @@ export async function uploadReportPDF(blob, clientId, reportMonth, filename, rep
     return null
   }
 
-  // Create alert notification for all users with access to this client
   const displayName = clientName || clientId
   const [ry, rm] = reportMonth.split('-')
   const monthNames = ['januar','februar','mart','april','maj','jun','jul','avgust','septembar','oktobar','novembar','decembar']
   const monthLabel = monthNames[parseInt(rm) - 1] + ' ' + ry
 
-  await sb.from('alerts').insert({
+  await dbInsert('alerts', {
     client_id: clientId,
     alert_type: 'report_ready',
     severity: 'info',

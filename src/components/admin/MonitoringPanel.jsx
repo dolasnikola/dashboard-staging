@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { sb } from '../../lib/supabase'
+import { dbSelect } from '../../lib/api'
 import { useAppStore } from '../../stores/appStore'
 import { Bar } from 'react-chartjs-2'
 
@@ -17,12 +17,11 @@ export default function MonitoringPanel() {
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-    const { data, error } = await sb
-      .from('sync_log')
-      .select('*')
-      .gte('started_at', sevenDaysAgo.toISOString())
-      .order('started_at', { ascending: false })
-      .limit(200)
+    const { data, error } = await dbSelect('sync_log', {
+      filters: [{ column: 'started_at', op: 'gte', value: sevenDaysAgo.toISOString() }],
+      order: [{ column: 'started_at', ascending: false }],
+      limit: 200
+    })
 
     if (error) {
       console.error('[MonitoringPanel] sync_log error:', error.message)

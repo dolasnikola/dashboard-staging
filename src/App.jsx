@@ -22,6 +22,11 @@ export default function App() {
   const [showSetPassword, setShowSetPassword] = useState(false)
 
   useEffect(() => {
+    // Migration: clear old localStorage tokens (one-time, remove after all users migrated)
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('sb-')) localStorage.removeItem(key)
+    })
+
     // Detect invite or recovery token in URL hash
     const hash = window.location.hash
     if (hash && (hash.includes('type=invite') || hash.includes('type=recovery'))) {

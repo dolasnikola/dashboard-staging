@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { sb } from '../../lib/supabase'
+import { apiGetUser, apiUpdatePassword, dbSelect, dbUpdate } from '../../lib/api'
 
 export default function SetPassword({ onComplete }) {
   const [fullName, setFullName] = useState('')
@@ -46,14 +46,13 @@ export default function SetPassword({ onComplete }) {
     setLoading(true)
     try {
       // Check if username already exists
-      const { data: existing } = await sb
-        .from('user_profiles')
-        .select('id')
-        .eq('full_name', trimmedName)
+      const { data: existing } = await dbSelect('user_profiles', {
+        columns: 'id',
+        filters: [{ column: 'full_name', op: 'eq', value: trimmedName }]
+      })
 
       if (existing && existing.length > 0) {
-        // Check it's not the current user's own profile
-        const { data: { user } } = await sb.auth.getUser()
+        const user = await apiGetUser()
         const isOwnProfile = existing.some(p => p.id === user?.id)
         if (!isOwnProfile) {
           setError('Ovo korisničko ime je već zauzeto')
@@ -63,15 +62,14 @@ export default function SetPassword({ onComplete }) {
       }
 
       // Update password
-      const { error: pwError } = await sb.auth.updateUser({ password })
-      if (pwError) throw pwError
+      await apiUpdatePassword(password)
 
       // Update full_name in user_profiles
-      const { data: { user } } = await sb.auth.getUser()
+      const user = await apiGetUser()
       if (user) {
-        await sb.from('user_profiles')
-          .update({ full_name: trimmedName })
-          .eq('id', user.id)
+        await dbUpdate('user_profiles', { full_name: trimmedName }, [
+          { column: 'id', op: 'eq', value: user.id }
+        ])
       }
 
       onComplete()

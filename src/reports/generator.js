@@ -3,7 +3,7 @@ import { applyPlugin } from 'jspdf-autotable'
 applyPlugin(jsPDF)
 import { registerFonts } from './fonts/register'
 import { useAppStore } from '../stores/appStore'
-import { sb } from '../lib/supabase'
+import { dbSelect } from '../lib/api'
 import {
   toAscii, fmtNum, fmtEur, fmtTableVal, getReportMonth, getMonthLabelCapital, getMonthNameEn,
   fetchCSV, parseSearchData, parseMetaData, parseGDNData, parseLocalDisplayData, sumTotals,
@@ -13,12 +13,14 @@ import {
 
 // ============== FETCH REPORT CONFIG FROM DB ==============
 export async function fetchReportConfig(clientId) {
-  const { data, error } = await sb.from('report_configs')
-    .select('*')
-    .eq('client_id', clientId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle()
+  const { data, error } = await dbSelect('report_configs', {
+    filters: [
+      { column: 'client_id', op: 'eq', value: clientId },
+      { column: 'is_active', op: 'eq', value: true }
+    ],
+    limit: 1,
+    maybeSingle: true
+  })
   if (error) { console.error('[fetchReportConfig]', error.message); return null }
   return data
 }
@@ -227,11 +229,14 @@ async function collectReportDataFromDB(config) {
   for (const [platKey, label] of Object.entries(platformLabels)) {
     if (platKey === 'local_display') {
       // Query local_display_dashboard table
-      const { data, error } = await sb.from('local_display_dashboard')
-        .select('placement, impressions, clicks, ctr')
-        .eq('client_id', config.client_id)
-        .gte('date', `${reportMonth}-01`)
-        .lte('date', `${reportMonth}-31`)
+      const { data, error } = await dbSelect('local_display_dashboard', {
+        columns: 'placement, impressions, clicks, ctr',
+        filters: [
+          { column: 'client_id', op: 'eq', value: config.client_id },
+          { column: 'date', op: 'gte', value: `${reportMonth}-01` },
+          { column: 'date', op: 'lte', value: `${reportMonth}-31` }
+        ]
+      })
       if (error) { console.error('[DB Report] local_display error:', error.message); continue }
 
       const placementAgg = {}
@@ -258,12 +263,15 @@ async function collectReportDataFromDB(config) {
     let from = 0
     const PAGE_SIZE = 1000
     while (true) {
-      const { data, error } = await sb.from('campaign_data')
-        .select('campaign, insertion_order, impressions, clicks, spend, reach')
-        .eq('client_id', config.client_id)
-        .eq('platform', dbPlatform)
-        .eq('month', reportMonth)
-        .range(from, from + PAGE_SIZE - 1)
+      const { data, error } = await dbSelect('campaign_data', {
+        columns: 'campaign, insertion_order, impressions, clicks, spend, reach',
+        filters: [
+          { column: 'client_id', op: 'eq', value: config.client_id },
+          { column: 'platform', op: 'eq', value: dbPlatform },
+          { column: 'month', op: 'eq', value: reportMonth }
+        ],
+        range: { from, to: from + PAGE_SIZE - 1 }
+      })
       if (error) { console.error(`[DB Report] ${platKey} error:`, error.message); break }
       allRows = allRows.concat(data || [])
       if (!data || data.length < PAGE_SIZE) break

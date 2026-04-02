@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { sb } from '../../lib/supabase'
+import { dbSelect, dbDelete, storageRemove } from '../../lib/api'
 import { useAppStore } from '../../stores/appStore'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -15,13 +15,14 @@ export default function ReportsTab({ clientId, client }) {
 
   const loadReports = async () => {
     setLoading(true)
-    const { data, error } = await sb
-      .from('report_history')
-      .select('*')
-      .eq('client_id', clientId)
-      .eq('status', 'approved')
-      .order('generated_at', { ascending: false })
-      .limit(50)
+    const { data, error } = await dbSelect('report_history', {
+      filters: [
+        { column: 'client_id', op: 'eq', value: clientId },
+        { column: 'status', op: 'eq', value: 'approved' }
+      ],
+      order: [{ column: 'generated_at', ascending: false }],
+      limit: 50
+    })
 
     if (error) {
       console.error('[ReportsTab] error:', error.message)
@@ -35,14 +36,12 @@ export default function ReportsTab({ clientId, client }) {
 
   const handleDelete = async (report) => {
     if (!confirm('Obrisati ovaj izvestaj?')) return
-    // Delete from Storage — extract path from signed URL
     try {
       const urlPath = new URL(report.pdf_url).pathname
       const storagePath = decodeURIComponent(urlPath.split('/object/sign/reports/')[1]?.split('?')[0] || '')
-      if (storagePath) await sb.storage.from('reports').remove([storagePath])
+      if (storagePath) await storageRemove('reports', [storagePath])
     } catch (e) { console.warn('[ReportsTab] storage delete:', e.message) }
-    // Delete from report_history
-    await sb.from('report_history').delete().eq('id', report.id)
+    await dbDelete('report_history', [{ column: 'id', op: 'eq', value: report.id }])
     notify('Izvestaj obrisan')
     loadReports()
   }

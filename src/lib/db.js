@@ -1,10 +1,12 @@
-import { sb } from './supabase'
+import { dbSelect, dbInsert, dbUpdate, dbDelete, dbUpsert, rpcCall, apiGetUser } from './api'
 import { _cache, dbGetCampaignData, isClientCacheValid, touchClient, clearClientCache } from './cache'
 
 // ============== CLIENTS ==============
 
 export async function fetchClients() {
-  const { data, error } = await sb.from('clients').select('*').order('name', { ascending: true })
+  const { data, error } = await dbSelect('clients', {
+    order: [{ column: 'name', ascending: true }]
+  })
 
   if (error) {
     console.error('[fetchClients] error:', error.message)
@@ -36,13 +38,9 @@ export async function fetchClients() {
 const _prefetchInProgress = {}
 
 export async function prefetchClientData(clientId) {
-  if (_prefetchInProgress[clientId]) {
-    // Already in progress for this client, skip
-    return
-  }
-  // Skip if cache is still fresh (TTL not expired)
+  if (_prefetchInProgress[clientId]) return
   if (isClientCacheValid(clientId)) {
-    touchClient(clientId) // refresh LRU position
+    touchClient(clientId)
     return
   }
   _prefetchInProgress[clientId] = true
@@ -52,11 +50,11 @@ export async function prefetchClientData(clientId) {
     let from = 0
     const pageSize = 1000
     while (true) {
-      const { data, error } = await sb.from('campaign_data')
-        .select('*')
-        .eq('client_id', clientId)
-        .order('date', { ascending: true })
-        .range(from, from + pageSize - 1)
+      const { data, error } = await dbSelect('campaign_data', {
+        filters: [{ column: 'client_id', op: 'eq', value: clientId }],
+        order: [{ column: 'date', ascending: true }],
+        range: { from, to: from + pageSize - 1 }
+      })
       if (error || !data || data.length === 0) break
       allCampaignRows.push(...data)
       if (data.length < pageSize) break
@@ -64,17 +62,18 @@ export async function prefetchClientData(clientId) {
     }
 
     const [budgetRes, flightRes, ga4Res, ldRes, lddRes] = await Promise.all([
-      sb.from('budgets').select('*').eq('client_id', clientId),
-      sb.from('flight_days').select('*').eq('client_id', clientId),
-      sb.from('ga4_kpi_data').select('*').eq('client_id', clientId),
-      sb.from('local_display_report').select('*').eq('client_id', clientId),
-      sb.from('local_display_dashboard').select('*').eq('client_id', clientId).order('date', { ascending: true })
+      dbSelect('budgets', { filters: [{ column: 'client_id', op: 'eq', value: clientId }] }),
+      dbSelect('flight_days', { filters: [{ column: 'client_id', op: 'eq', value: clientId }] }),
+      dbSelect('ga4_kpi_data', { filters: [{ column: 'client_id', op: 'eq', value: clientId }] }),
+      dbSelect('local_display_report', { filters: [{ column: 'client_id', op: 'eq', value: clientId }] }),
+      dbSelect('local_display_dashboard', {
+        filters: [{ column: 'client_id', op: 'eq', value: clientId }],
+        order: [{ column: 'date', ascending: true }]
+      })
     ])
 
-    // Clear old cache for this client, then repopulate
     clearClientCache(clientId)
 
-    // Populate cache
     allCampaignRows.forEach(row => {
       const key = `${clientId}_${row.platform}_${row.month}`
       if (!_cache.campaignData[key]) _cache.campaignData[key] = []
@@ -165,7 +164,7 @@ export async function prefetchClientData(clientId) {
 }
 
 export async function fetchHomepageSummary(month) {
-  const { data, error } = await sb.rpc('get_homepage_summary', { p_month: month })
+  const { data, error } = await rpcCall('get_homepage_summary', { p_month: month })
   if (error) {
     console.error('[fetchHomepageSummary] error:', error.message)
     return
@@ -183,13 +182,12 @@ export async function fetchHomepageSummary(month) {
   })
 
   const [budgetRes, flightRes] = await Promise.all([
-    sb.from('budgets').select('*'),
-    sb.from('flight_days').select('*').eq('month', month)
+    dbSelect('budgets'),
+    dbSelect('flight_days', { filters: [{ column: 'month', op: 'eq', value: month }] })
   ])
   if (budgetRes.error) console.error('[fetchHomepageSummary] budgets error:', budgetRes.error.message)
   if (flightRes.error) console.error('[fetchHomepageSummary] flight_days error:', flightRes.error.message)
 
-  // Only update cache after all queries succeed
   _cache.homepageSummary = newSummary
   if (budgetRes.data) {
     budgetRes.data.forEach(row => {
@@ -241,8 +239,11 @@ export async function dbSaveCampaignData(clientId, platform, month, rows) {
 
   const records = cleanRows.map(r => ({ client_id: clientId, platform, month, ...r }))
 
-  const { error: delError } = await sb.from('campaign_data')
-    .delete().eq('client_id', clientId).eq('platform', platform).eq('month', month)
+  const { error: delError } = await dbDelete('campaign_data', [
+    { column: 'client_id', op: 'eq', value: clientId },
+    { column: 'platform', op: 'eq', value: platform },
+    { column: 'month', op: 'eq', value: month }
+  ])
   if (delError) {
     console.error('[dbSave] DELETE error:', delError.message)
     return
@@ -251,7 +252,7 @@ export async function dbSaveCampaignData(clientId, platform, month, rows) {
   if (records.length > 0) {
     for (let i = 0; i < records.length; i += 500) {
       const batch = records.slice(i, i + 500)
-      const { error } = await sb.from('campaign_data').insert(batch)
+      const { error } = await dbInsert('campaign_data', batch)
       if (error) {
         console.error('[dbSave] INSERT error for', key, ':', error.message)
         break
@@ -264,7 +265,7 @@ export async function dbSaveCampaignData(clientId, platform, month, rows) {
 
 export async function dbSetBudget(clientId, platform, month, amount) {
   _cache.budgets[`budget_${clientId}_${platform}_${month}`] = amount
-  const { error } = await sb.from('budgets').upsert({
+  const { error } = await dbUpsert('budgets', {
     client_id: clientId, platform, month, amount,
     updated_at: new Date().toISOString()
   }, { onConflict: 'client_id,platform,month' })
@@ -275,7 +276,7 @@ export async function dbSetBudget(clientId, platform, month, amount) {
 
 export async function dbSetFlightDays(clientId, month, days) {
   _cache.flightDays[`flight_${clientId}_${month}`] = days
-  const { error } = await sb.from('flight_days').upsert({
+  const { error } = await dbUpsert('flight_days', {
     client_id: clientId, month, days
   }, { onConflict: 'client_id,month' })
   if (error) console.error('Upsert flight_days error:', error)
@@ -287,7 +288,10 @@ export async function dbSaveGA4Data(clientId, month, rows) {
   const key = `ga4_${clientId}_${month}`
   _cache.ga4Data[key] = rows
 
-  const { error: delError } = await sb.from('ga4_kpi_data').delete().eq('client_id', clientId).eq('month', month)
+  const { error: delError } = await dbDelete('ga4_kpi_data', [
+    { column: 'client_id', op: 'eq', value: clientId },
+    { column: 'month', op: 'eq', value: month }
+  ])
   if (delError) {
     console.error('[dbSaveGA4Data] DELETE error:', delError.message)
     return
@@ -297,7 +301,7 @@ export async function dbSaveGA4Data(clientId, month, rows) {
       client_id: clientId, month,
       product: r.product, leads: r.leads || 0, sessions: r.sessions || 0, users: r.users || 0
     }))
-    const { error } = await sb.from('ga4_kpi_data').upsert(records, { onConflict: 'client_id,month,product' })
+    const { error } = await dbUpsert('ga4_kpi_data', records, { onConflict: 'client_id,month,product' })
     if (error) console.error('[dbSave] GA4 upsert error:', error.message)
   }
 }
@@ -318,7 +322,7 @@ export async function dbCreateClient(clientData) {
     budget_note: clientData.budgetNote || '',
     sort_order: clientData.sortOrder ?? 100
   }
-  const { error } = await sb.from('clients').insert(record)
+  const { error } = await dbInsert('clients', record)
   if (error) { console.error('[dbCreateClient]', error.message); return false }
   return true
 }
@@ -337,7 +341,7 @@ export async function dbUpdateClient(clientId, updates) {
   if (updates.setup !== undefined) record.setup = updates.setup
   if (updates.budgetNote !== undefined) record.budget_note = updates.budgetNote
   if (updates.sortOrder !== undefined) record.sort_order = updates.sortOrder
-  const { error } = await sb.from('clients').update(record).eq('id', clientId)
+  const { error } = await dbUpdate('clients', record, [{ column: 'id', op: 'eq', value: clientId }])
   if (error) { console.error('[dbUpdateClient]', error.message); return false }
   return true
 }
@@ -345,10 +349,10 @@ export async function dbUpdateClient(clientId, updates) {
 export async function dbDeleteClient(clientId) {
   const relatedTables = ['sheet_links', 'budgets', 'flight_days', 'ga4_kpi_data', 'campaign_data', 'user_client_access', 'report_history', 'report_configs']
   for (const table of relatedTables) {
-    const { error } = await sb.from(table).delete().eq('client_id', clientId)
+    const { error } = await dbDelete(table, [{ column: 'client_id', op: 'eq', value: clientId }])
     if (error) { console.error(`[dbDeleteClient] ${table} delete error:`, error.message); return false }
   }
-  const { error } = await sb.from('clients').delete().eq('id', clientId)
+  const { error } = await dbDelete('clients', [{ column: 'id', op: 'eq', value: clientId }])
   if (error) { console.error('[dbDeleteClient]', error.message); return false }
   return true
 }
@@ -356,7 +360,9 @@ export async function dbDeleteClient(clientId) {
 // ============== REPORT CONFIG (FAZA 4B) ==============
 
 export async function dbGetAllReportConfigs() {
-  const { data, error } = await sb.from('report_configs').select('*').eq('is_active', true)
+  const { data, error } = await dbSelect('report_configs', {
+    filters: [{ column: 'is_active', op: 'eq', value: true }]
+  })
   if (error) { console.error('[dbGetAllReportConfigs]', error.message); return [] }
   return data || []
 }
@@ -365,24 +371,27 @@ export async function dbSaveReportConfig(config) {
   if (config.id) {
     const { id, ...updates } = config
     updates.updated_at = new Date().toISOString()
-    const { error } = await sb.from('report_configs').update(updates).eq('id', id)
+    const { error } = await dbUpdate('report_configs', updates, [{ column: 'id', op: 'eq', value: id }])
     if (error) { console.error('[dbSaveReportConfig]', error.message); return false }
     return true
   }
-  const { error } = await sb.from('report_configs').insert(config)
+  const { error } = await dbInsert('report_configs', config)
   if (error) { console.error('[dbSaveReportConfig]', error.message); return false }
   return true
 }
 
 export async function dbDeleteReportConfig(configId) {
-  const { error } = await sb.from('report_configs').delete().eq('id', configId)
+  const { error } = await dbDelete('report_configs', [{ column: 'id', op: 'eq', value: configId }])
   if (error) { console.error('[dbDeleteReportConfig]', error.message); return false }
   return true
 }
 
 export async function dbGetReportHistory(clientId) {
-  const { data, error } = await sb.from('report_history')
-    .select('*').eq('client_id', clientId).order('generated_at', { ascending: false }).limit(20)
+  const { data, error } = await dbSelect('report_history', {
+    filters: [{ column: 'client_id', op: 'eq', value: clientId }],
+    order: [{ column: 'generated_at', ascending: false }],
+    limit: 20
+  })
   if (error) { console.error('[dbGetReportHistory]', error.message); return [] }
   return data || []
 }
@@ -391,7 +400,7 @@ export async function dbGetReportHistory(clientId) {
 
 export async function dbGetSheetLinks() {
   if (_cache.sheetLinks) return _cache.sheetLinks
-  const { data, error } = await sb.from('sheet_links').select('*')
+  const { data, error } = await dbSelect('sheet_links')
   if (error) { console.error('fetchSheetLinks error:', error); return {} }
   const links = {};
   (data || []).forEach(row => {
@@ -412,7 +421,7 @@ export async function dbSaveSheetLinks(links) {
     }
   })
   for (const rec of records) {
-    const { error } = await sb.from('sheet_links').upsert(rec, { onConflict: 'client_id,platform' })
+    const { error } = await dbUpsert('sheet_links', rec, { onConflict: 'client_id,platform' })
     if (error) console.error('Upsert sheet_link error:', error)
   }
 }
@@ -420,8 +429,11 @@ export async function dbSaveSheetLinks(links) {
 // ============== SYNC LOG ==============
 
 export async function dbGetLastSync() {
-  const { data, error } = await sb.from('sync_log')
-    .select('*').order('started_at', { ascending: false }).limit(1).single()
+  const { data, error } = await dbSelect('sync_log', {
+    order: [{ column: 'started_at', ascending: false }],
+    limit: 1,
+    single: true
+  })
   if (error) { console.log('[dbGetLastSync] No sync log yet:', error.message); return null }
   return data
 }
@@ -429,19 +441,20 @@ export async function dbGetLastSync() {
 // ============== ALERTS ==============
 
 export async function fetchAlerts() {
-  const { data, error } = await sb
-    .from('alerts')
-    .select('*')
-    .eq('is_dismissed', false)
-    .gte('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false })
-    .limit(50)
+  const { data, error } = await dbSelect('alerts', {
+    filters: [
+      { column: 'is_dismissed', op: 'eq', value: false },
+      { column: 'expires_at', op: 'gte', value: new Date().toISOString() }
+    ],
+    order: [{ column: 'created_at', ascending: false }],
+    limit: 50
+  })
   if (error) { console.error('[fetchAlerts]', error.message); return }
   _cache.alerts = data || []
 }
 
 export async function markAlertRead(alertId) {
-  const { error } = await sb.from('alerts').update({ is_read: true }).eq('id', alertId)
+  const { error } = await dbUpdate('alerts', { is_read: true }, [{ column: 'id', op: 'eq', value: alertId }])
   if (error) { console.error('[markAlertRead]', error.message); return }
   const alert = _cache.alerts.find(a => a.id === alertId)
   if (alert) alert.is_read = true
@@ -451,13 +464,13 @@ export async function markAllAlertsRead() {
   const unread = (_cache.alerts || []).filter(a => !a.is_read)
   if (unread.length === 0) return
   const ids = unread.map(a => a.id)
-  const { error } = await sb.from('alerts').update({ is_read: true }).in('id', ids)
+  const { error } = await dbUpdate('alerts', { is_read: true }, [{ column: 'id', op: 'in', value: ids }])
   if (error) { console.error('[markAllAlertsRead]', error.message); return }
   unread.forEach(a => { a.is_read = true })
 }
 
 export async function dismissAlert(alertId) {
-  const { error } = await sb.from('alerts').update({ is_dismissed: true }).eq('id', alertId)
+  const { error } = await dbUpdate('alerts', { is_dismissed: true }, [{ column: 'id', op: 'eq', value: alertId }])
   if (error) { console.error('[dismissAlert]', error.message); return }
   _cache.alerts = (_cache.alerts || []).filter(a => a.id !== alertId)
 }
@@ -465,29 +478,34 @@ export async function dismissAlert(alertId) {
 // ============== ADMIN ==============
 
 export async function dbGetAllUsers() {
-  const { data, error } = await sb.from('user_profiles').select('*').order('created_at', { ascending: true })
+  const { data, error } = await dbSelect('user_profiles', {
+    order: [{ column: 'created_at', ascending: true }]
+  })
   if (error) { console.error('[dbGetAllUsers]', error.message); return [] }
   return data || []
 }
 
 export async function dbGetAllClientAccess() {
-  const { data, error } = await sb.from('user_client_access').select('*')
+  const { data, error } = await dbSelect('user_client_access')
   if (error) { console.error('[dbGetAllClientAccess]', error.message); return [] }
   return data || []
 }
 
 export async function dbUpdateUserRole(userId, newRole) {
-  const { error } = await sb.from('user_profiles').update({ role: newRole }).eq('id', userId)
+  const { error } = await dbUpdate('user_profiles', { role: newRole }, [{ column: 'id', op: 'eq', value: userId }])
   if (error) { console.error('[dbUpdateUserRole]', error.message); return false }
   return true
 }
 
 export async function dbSetClientAccess(userId, clientId, grant) {
   if (grant) {
-    const { error } = await sb.from('user_client_access').upsert({ user_id: userId, client_id: clientId })
+    const { error } = await dbUpsert('user_client_access', { user_id: userId, client_id: clientId })
     if (error) { console.error('[dbSetClientAccess] grant error:', error.message); return false }
   } else {
-    const { error } = await sb.from('user_client_access').delete().eq('user_id', userId).eq('client_id', clientId)
+    const { error } = await dbDelete('user_client_access', [
+      { column: 'user_id', op: 'eq', value: userId },
+      { column: 'client_id', op: 'eq', value: clientId }
+    ])
     if (error) { console.error('[dbSetClientAccess] revoke error:', error.message); return false }
   }
   return true
@@ -503,16 +521,16 @@ export async function runDiagnostics() {
   results.httpsOk = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
 
   try {
-    const { data: { session }, error } = await sb.auth.getSession()
-    results.session = session ? { userId: session.user.id, email: session.user.email } : null
-    results.sessionError = error?.message || null
+    const user = await apiGetUser()
+    results.session = user ? { userId: user.id, email: user.email } : null
+    results.sessionError = null
   } catch (e) { results.session = null; results.sessionError = e.message }
 
   const tables = ['clients', 'campaign_data', 'budgets', 'sheet_links', 'ga4_kpi_data']
   results.tables = {}
   for (const table of tables) {
     try {
-      const { error, count } = await sb.from(table).select('*', { count: 'exact', head: true })
+      const { count, error } = await dbSelect(table, { columns: '*', options: { count: 'exact', head: true } })
       results.tables[table] = { count, error: error?.message || null }
     } catch (e) { results.tables[table] = { count: 0, error: e.message } }
   }
@@ -530,7 +548,6 @@ export async function runDiagnostics() {
   return results
 }
 
-// Expose to window for console debugging
 if (typeof window !== 'undefined') {
   window.runDiagnostics = runDiagnostics
 }
