@@ -185,8 +185,99 @@ NOVO:  Browser → šalje httpOnly cookie → Vercel API Proxy → čita JWT →
        XSS napadač → ne može čitati httpOnly cookie → blokiran ✅
 ```
 
-## 9. Otvorena pitanja
+## 9. Šta je urađeno (2026-04-02)
+
+### Commits na `security-hardening` branch-u:
+1. **a081015** — Glavni commit: Faza 1 + Faza 2 kompletne
+   - `@supabase/ssr` dodat u package.json
+   - `src/lib/supabase.js` → `createBrowserClient`
+   - `src/stores/authStore.js` → `getUser()` + proxy API pozivi
+   - `src/lib/db.js` — svih 36 `sb.*` poziva zamenjeno proxy-jem
+   - `src/lib/reportStorage.js` — storage i auth pozivi kroz proxy
+   - `src/lib/api.js` — **nov** frontend wrapper za sve proxy pozive
+   - `src/App.jsx` — localStorage cleanup za stare tokene
+   - `src/components/auth/SetPassword.jsx` — proxy
+   - `src/components/client/ReportsTab.jsx` — proxy
+   - `src/components/admin/MonitoringPanel.jsx` — proxy
+   - `src/reports/generator.js` — proxy
+   - `api/` direktorijum — svi serverless proxy routes
+   - `vercel.json` — API rewrite + installCommand
+   - `cyber.md` — ova dokumentacija
+
+2. **e2421cf** — Fix: preimenovani API fajlovi u `.mjs` (ESM kompatibilnost sa commonjs package.json)
+
+3. **541b1b9** — Fix: uklonjen `package-lock.json` iz git-a jer nije sadržao `@supabase/ssr`
+
+### Vercel env vars (postavljeni):
+- `SUPABASE_URL` = `https://vorffefuboftlcwteucu.supabase.co`
+- `SUPABASE_ANON_KEY` = publishable key (NE service_role!)
+
+### Poznati problemi:
+- `package-lock.json` uklonjen iz git-a — Vercel generiše svoj na deploy
+- Login **ne radi još** na preview deploy-u — čeka se debug sutra sa pravim Node.js okruženjem
+- `src/lib/supabase.js` — zadržan ali nijedan fajl ga ne importuje više
+
+---
+
+## 10. TODO za sutra (drugi računar sa Node.js)
+
+### Korak 1: Sync i install
+```bash
+cd dashboard-staging
+git checkout security-hardening
+git pull
+npm install
+```
+Ovo će generisati svež `package-lock.json` sa `@supabase/ssr`.
+
+### Korak 2: Lokalni test
+```bash
+npx vercel dev
+```
+**NE `npm run dev`** — Vite dev server ne podržava `api/` serverless routes.
+`vercel dev` pokreće i frontend i API routes lokalno.
+
+Testiraj:
+- [ ] Login sa email/password
+- [ ] Da li se homepage učitava (clienti, budgeti)
+- [ ] Da li se ClientDetail učitava (campaign data, charts)
+- [ ] Admin panel (korisnici, klijenti, monitoring)
+- [ ] Report generacija
+- [ ] Logout + ponovo login
+
+### Korak 3: Debug ako login ne radi
+Proveri u browser DevTools > Network tab:
+- `POST /api/auth/login` — da li vraća 200 ili 500?
+- Ako 500: proveri Vercel Function Logs (Vercel Dashboard > Deployments > Functions tab)
+- Čest problem: env vars nisu dostupni — proveri da `SUPABASE_URL` i `SUPABASE_ANON_KEY` postoje
+
+### Korak 4: Commit lock fajl
+```bash
+git add package-lock.json
+git commit -m "Add package-lock.json with @supabase/ssr"
+git push
+```
+
+### Korak 5: Testiranje na Vercel preview
+Posle push-a, sačekaj Vercel preview deploy i testiraj iste korake kao lokalno.
+
+### Korak 6: Ako sve radi — merge u main
+```bash
+git checkout main
+git merge security-hardening
+git push
+```
+**PAŽNJA:** Ovo menja produkcioni sajt! Svi korisnici će morati ponovo da se uloguju (tokeni se sele iz localStorage u cookies).
+
+### Korak 7: Čišćenje (posle potvrde da radi)
+- [ ] Obriši `src/lib/supabase.js` (nijedan fajl ga ne importuje)
+- [ ] Ukloni localStorage cleanup iz `App.jsx` (posle 1-2 nedelje kad svi korisnici migriraju)
+- [ ] Razmisli o CSP headers i MFA kao dodatnim slojevima
+
+---
+
+## 11. Otvorena pitanja za budućnost
 - [ ] Da li dodajemo CSP headers kao dodatni sloj?
 - [ ] Da li dodajemo MFA (TOTP) kao treći sloj?
-- [ ] Vercel env vars: SUPABASE_URL i SUPABASE_ANON_KEY moraju biti postavljeni
-- [ ] `src/lib/supabase.js` — sada neiskorišćen, može se obrisati posle testiranja
+- [ ] Google Ads API OAuth2 — planirano za sledeću fazu
+- [ ] PKCE flow migracija (umesto implicit hash-based flow za invite linkove)
