@@ -1,4 +1,4 @@
-import { createSupabaseFromRequest, applyCookies, json, error } from './_lib/supabase-server.js'
+import { createSupabaseFromRequest, applyCookies, json, error } from './_lib/supabase-server.mjs'
 
 /**
  * Storage proxy — handles upload, signed URL, and delete operations.

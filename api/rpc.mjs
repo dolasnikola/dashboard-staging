@@ -1,4 +1,4 @@
-import { createSupabaseFromRequest, applyCookies, json, error } from './_lib/supabase-server.js'
+import { createSupabaseFromRequest, applyCookies, json, error } from './_lib/supabase-server.mjs'
 
 /**
  * RPC proxy — calls Supabase RPC functions.

@@ -1,4 +1,4 @@
-import { createSupabaseFromRequest, applyCookies, json } from '../_lib/supabase-server.js'
+import { createSupabaseFromRequest, applyCookies, json } from '../_lib/supabase-server.mjs'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })

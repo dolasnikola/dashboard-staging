@@ -1,4 +1,4 @@
-import { createSupabaseFromRequest, applyCookies, json, error } from './_lib/supabase-server.js'
+import { createSupabaseFromRequest, applyCookies, json, error } from './_lib/supabase-server.mjs'
 
 /**
  * Generic DB proxy — handles select, insert, update, delete, upsert operations.
