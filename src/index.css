@@ -248,6 +248,13 @@ body {
   padding: 12px 16px;
   align-items: center;
   justify-content: space-between;
+  transform: translateY(0);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  opacity: 1;
+}
+.mobile-header.hidden {
+  transform: translateY(-100%);
+  opacity: 0;
 }
 
 .sidebar-overlay {

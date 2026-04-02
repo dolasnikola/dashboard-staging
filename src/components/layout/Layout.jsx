@@ -1,13 +1,28 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Sidebar from './Sidebar'
 
 export default function Layout({ children, onImportClick, onBudgetClick }) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [headerVisible, setHeaderVisible] = useState(true)
+  const scrollTimer = useRef(null)
+
+  useEffect(() => {
+    const onScroll = () => {
+      setHeaderVisible(false)
+      clearTimeout(scrollTimer.current)
+      scrollTimer.current = setTimeout(() => setHeaderVisible(true), 400)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      clearTimeout(scrollTimer.current)
+    }
+  }, [])
 
   return (
     <>
-      {/* Mobile header — outside flex layout so it stacks on top */}
-      <div className="mobile-header">
+      {/* Mobile header — hides on scroll, reappears when scroll stops */}
+      <div className={`mobile-header${headerVisible ? '' : ' hidden'}`}>
         <button
           onClick={() => setMobileOpen(true)}
           style={{
