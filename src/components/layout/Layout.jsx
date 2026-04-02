@@ -5,8 +5,8 @@ export default function Layout({ children, onImportClick, onBudgetClick }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <div className="app-layout">
-      {/* Mobile header */}
+    <>
+      {/* Mobile header — outside flex layout so it stacks on top */}
       <div className="mobile-header">
         <button
           onClick={() => setMobileOpen(true)}
@@ -34,16 +34,18 @@ export default function Layout({ children, onImportClick, onBudgetClick }) {
         onClick={() => setMobileOpen(false)}
       />
 
-      <Sidebar
-        onImportClick={onImportClick}
-        onBudgetClick={onBudgetClick}
-        mobileOpen={mobileOpen}
-        onMobileClose={() => setMobileOpen(false)}
-      />
+      <div className="app-layout">
+        <Sidebar
+          onImportClick={onImportClick}
+          onBudgetClick={onBudgetClick}
+          mobileOpen={mobileOpen}
+          onMobileClose={() => setMobileOpen(false)}
+        />
 
-      <main className="main-content">
-        {children}
-      </main>
-    </div>
+        <main className="main-content">
+          {children}
+        </main>
+      </div>
+    </>
   )
 }
