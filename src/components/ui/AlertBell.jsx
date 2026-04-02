@@ -87,7 +87,7 @@ export default function AlertBell() {
 
       {open && (
         <div style={{
-          position: 'absolute', top: '100%', right: 0, marginTop: 8,
+          position: 'absolute', left: '100%', top: 0, marginLeft: 8,
           width: 360, maxHeight: 420, overflowY: 'auto',
           background: 'var(--color-card)', border: '1px solid var(--color-border)',
           borderRadius: 'var(--radius-default)', boxShadow: 'var(--shadow-lg)',

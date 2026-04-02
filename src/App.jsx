@@ -4,7 +4,7 @@ import { useAuthStore } from './stores/authStore'
 import { useAppStore } from './stores/appStore'
 import LoginGate from './components/auth/LoginGate'
 import SetPassword from './components/auth/SetPassword'
-import Header from './components/layout/Header'
+import Layout from './components/layout/Layout'
 import HomePage from './components/home/HomePage'
 import ClientDetail from './components/client/ClientDetail'
 import AdminPanel from './components/admin/AdminPanel'
@@ -70,16 +70,17 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <Header
+      <Layout
         onImportClick={() => setImportOpen(true)}
         onBudgetClick={() => setBudgetOpen(true)}
-      />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/:clientId" element={<BrandingProvider><ClientDetail /></BrandingProvider>} />
-        <Route path="/admin" element={<AdminPanel />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      >
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/:clientId" element={<BrandingProvider><ClientDetail /></BrandingProvider>} />
+          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
       <Notification />
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
       {budgetOpen && <BudgetModal onClose={() => setBudgetOpen(false)} />}
