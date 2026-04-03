@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vorffefuboftlcwteucu.supabase.co'
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_yqjtiUjZ8r0Mf8TOq_gGpw_el5VJ9eD'
 
 /**
  * Parse cookies from request header into { name, value } array
